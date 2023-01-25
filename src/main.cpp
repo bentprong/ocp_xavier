@@ -2,6 +2,7 @@
 #include "Wire.h"
 #include "float.h"
 #include "FlashAsEEPROM_SAMD.h"
+#include "INA219.h"
 
 // This project does not use the standard Arduino analog functions which
 // number analog inputs A0.. instead we use the def for the muxpos bit
@@ -76,6 +77,10 @@ const float     ADCGain = 2.0;
 const float     ADCVrefA = 2.5;
 const float     voltsPerCount = ADCVrefA / 4095.0;
 const uint32_t  EEPROM_signature = 0xDE110C02;  // "DeLL Open Compute 02 (Xavier)"
+INA219::t_i2caddr       u2 = INA219::t_i2caddr(64);
+INA219::t_i2caddr       u3 = INA219::t_i2caddr(56);
+INA219          u2Monitor(u2);
+INA219          u3Monitor(u3);
 
 // Variable data
 uint16_t        ADC_resultsArray[ADC_OVERSAMPLE_COUNT+1];
@@ -99,7 +104,7 @@ int waitAnyKey(void);
 // arg count does not include the command token
 int help(int);
 int calib(int);
-int readCmd(int);
+int curCmd(int);
 int rawRead(int);
 int setK(int);
 int readLoop(int);
@@ -118,7 +123,7 @@ const cli_entry     cmdTable[] = {
     {"debug",    debug, -1, "Debug functions mostly for developer use.", "'debug reset' resets board; 'debug dump' dumps EEPROM"},
     {"help",       help, 0, "THIS DOES NOT DISPLAY ON PURPOSE", " "},
     {"check",  readLoop, 0, "Continuous loop reading raw sensor data.", "Hit any key to exit loop."},
-    {"read",    readCmd, 0, "Read LED color temperature and intensity.", " "},
+    {"current",  curCmd, 0, "Read current for 12V and 3.3V rails.", " "},
     {"temp",   readTemp, 0, "Read board (not MCU core) temperature sensor.", "Reports temperature in degrees C and F."},
     {"set",        setK, 2, "Sets a stored parameter.", "set k 1.234 sets K constant."},
     {"calib",     calib, 0, "Calibrate board LED sensor", "Uses LTF Calibration Board LEDs"},
@@ -553,26 +558,44 @@ void ledRawRead(led_meas_t *m)
     */
 
 //===================================================================
-//                               READ Command
+//                          CURRENT Command
 //===================================================================
-int readCmd(int arg)
+int curCmd(int arg)
 {
-    led_meas_t          *m = &currentMeasurement;
 
-    SerialUSB.println("Acquiring data, please wait...");
+    SerialUSB.println("Acquiring U2 current data, please wait...");
     SerialUSB.flush();
 
-    ledRawRead(m);
-
-    sprintf(outBfr, "Intensity: %4d mcd %4d %5.3f V", (int) m->intensity, m->intensityCounts, m->vI);
-    SerialUSB.println(outBfr);
-
-    sprintf(outBfr, "    Color: %4d nm  %4d %5.3f V", (int) m->lv, m->colorCounts, m->vC);
-    SerialUSB.println(outBfr);
+  SerialUSB.print("raw shunt voltage: ");
+  SerialUSB.println(u2Monitor.shuntVoltageRaw());
+  
+  SerialUSB.print("raw bus voltage:   ");
+  SerialUSB.println(u2Monitor.busVoltageRaw());
+  
+  SerialUSB.println("--");
+  
+  SerialUSB.print("shunt voltage: ");
+  SerialUSB.print(u2Monitor.shuntVoltage() * 1000, 4);
+  SerialUSB.println(" mV");
+  
+  SerialUSB.print("shunt current: ");
+  SerialUSB.print(u2Monitor.shuntCurrent() * 1000, 4);
+  SerialUSB.println(" mA");
+  
+  SerialUSB.print("bus voltage:   ");
+  SerialUSB.print(u2Monitor.busVoltage(), 4);
+  SerialUSB.println(" V");
+  
+  SerialUSB.print("bus power:     ");
+  SerialUSB.print(u2Monitor.busPower() * 1000, 4);
+  SerialUSB.println(" mW");
+  
+  SerialUSB.println(" ");
+  SerialUSB.println(" ");
 
     return(0);
 
-} // readCmd()
+} // curCmd()
 
 //===================================================================
 //                              TEMP Command
@@ -615,7 +638,7 @@ int readLoop(int arg)
 
   while ( SerialUSB.available() == 0 )
   {
-      readCmd(0);
+      curCmd(0);
       readTemp(0);
       SerialUSB.println(" ");
       delay(1000);
@@ -872,6 +895,8 @@ void setup()
   pinMode(PIN_LED, OUTPUT);
   digitalWrite(PIN_LED, LEDstate);
 
+
+
   // start serial over USB and wait for a connection
   // NOTE: Baud rate isn't applicable to USB but...
   // NOTE: Many libraries won't init unless Serial
@@ -889,6 +914,7 @@ void setup()
   EEPROM_InitLocal();
   ADC_Init();
   Wire.begin();
+  u2Monitor.begin();
 
   SerialUSB.println(" ");
   SerialUSB.print(hello);
