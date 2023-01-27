@@ -4,16 +4,6 @@
 #include "FlashAsEEPROM_SAMD.h"
 #include "INA219.h"
 
-// This project does not use the standard Arduino analog functions which
-// number analog inputs A0.. instead we use the def for the muxpos bit
-// field in the INPUTCTRL ADC register directly.  See variants.cpp and
-// variants.h in the PlatformIO install directory
-#define ADC_VREF_PIN                ADC_INPUTCTRL_MUXPOS_PIN1_Val
-#define SPECTRA_COLOR_OUT_PIN       ADC_INPUTCTRL_MUXPOS_PIN2_Val
-#define SPECTRA_INTENSITY_OUT_PIN   ADC_INPUTCTRL_MUXPOS_PIN3_Val
-#define ADC_OVERSAMPLE_COUNT        64
-#define ADC_SAMPLING_DELAY          33
-
 #define AT30TS74_I2C_ADDR           72 // 0x48
 #define FAST_BLINK_DELAY            200
 #define SLOW_BLINK_DELAY            1000
@@ -32,8 +22,101 @@
 #define CLI_ERR_TOO_MANY_ARGS     3
 #define MAX_TOKENS                8
 
+// INA219 defines
+#define U2_SHUNT_MAX_V  0.04      /* Rated max for our shunt is 75mv for 50 A current: 
+                                  /* we will measure only up to 20A so max is about 75mV*20/50 */
+#define U2_BUS_MAX_V    16.0      /* with 12v lead acid battery this should be enough*/
+#define U2_MAX_CURRENT  3.0       /* In our case this is enaugh even tho shunt is capable to 50 A*/
+#define U3_SHUNT_MAX_V  0.04      /* Rated max for our shunt is 75mv for 50 A current: 
+                                  /* we will mesaure only up to 20A so max is about 75mV*20/50 */
+#define U3_BUS_MAX_V    16.0      /* with 12v lead acid battery this should be enough*/
+#define U3_MAX_CURRENT  3.0       /* In our case this is enaugh even tho shunt is capable to 50 A*/
+#define SHUNT_R         0.01      /* Shunt resistor in ohms (R211 and R210 are the same ohms) */
+
+// I/O Pins (using Arduino scheme, see variant files
+#define OCP_SCAN_LD_N         0   // PA22
+#define OCP_MAIN_PWR_EN       1   // PA23
+#define OCP_SCAN_DATA_IN      2   // PA10
+#define OCP_SCAN_CLK          3   // PA11
+#define OCP_PRSNTB1_N         4   // PB10
+#define PCIE_PRES_N           5   // PB11
+#define UART_RX_UNUSED        6   // PA20
+#define SCAN_VER_0            7   // PA21
+#define OCP_SCAN_DATA_OUT     8   // PA08
+#define OCP_AUX_PWR_EN        9   // PA09
+#define UART_TX_UNUSED        10  // PA19
+#define MCU_SDA               11  // PA16
+#define MCU_SCL               12  // PA17
+// NOTE: LED_PIN 13 defined in variant.h
+#define OCP_PWRBRK_N          14  // PB22
+#define OCP_BIF0_N            15  // PA02
+#define OCP_PRSNTB3_N         16  // PB02
+#define FAN_ON_AUX            17  // PB08
+#define OCP_SMB_RST_N         18  // PB09
+#define LFF_PORT0             19  // PA05 (not used)
+#define LFF_PORT1             20  // PA06 (not used)
+#define LFF_PORT2             21  // PA07 (not used)
+// NOTE: USB_HS_DP (22) and USB_HS_DN (23) not available to CLI
+#define OCP_PRSNTB0_N         24
+#define OCP_BIF1_N            25  // PA03
+#define OCP_SLOT_ID0          26  // PA12
+#define OCP_SLOT_ID1          27  // PA13
+#define OCP_PRSNTB2_N         28  // PA14
+#define SCAN_VER_1            29  // PA15
+#define PHY_RESET_N           30  // PA27
+#define RBT_ISOLATE_N         31  // PA28
+#define OCP_BIF2_N            32  // PA04
+#define OCP_WAKE_N            33  // PB03
+#define TEMP_WARN             34  // PA00
+#define TEMP_CRIT             35  // PA01
+
+#define INPUT_PIN             INPUT
+#define OUTPUT_PIN            OUTPUT
+
 // Version
 const char      versString[] = "1.0.0";
+
+// Pin Management structure
+typedef struct {
+  uint8_t           pinNo;
+  uint8_t           pinFunc;
+  char              name[20];
+  bool              state;
+} pin_mgt_t;
+
+// constant pin defs used for 1) pin init and 2) copied into volatile status structure
+// to maintain state of inputs pins that get written 3) pin names (nice, right?) ;-)
+const pin_mgt_t     staticPins[] = {
+  {           OCP_SCAN_LD_N, INPUT,  "OCP_SCAN_LD_N", 0},
+  {         OCP_MAIN_PWR_EN, INPUT, "OCP_MAIN_PWR_EN", 0},
+  {        OCP_SCAN_DATA_IN, INPUT, "OCP_SCAN_DATA_IN", 0},
+  {            OCP_SCAN_CLK, INPUT, "OCP_SCAN_CLK", 0},
+  {           OCP_PRSNTB1_N, INPUT, "OCP_PRSNTB1_N", 0},
+  {             PCIE_PRES_N, INPUT, "PCIE_PRES_N", 0},
+  {              SCAN_VER_0, INPUT, "SCAN_VER_0", 0},
+  {       OCP_SCAN_DATA_OUT, OUTPUT, "OCP_SCAN_DATA_OUT", 0},
+  {          OCP_AUX_PWR_EN, OUTPUT, "OCP_AUX_PWR_EN", 0},
+  {            OCP_PWRBRK_N, OUTPUT, "OCP_PWRBRK_N", 0},
+  {              OCP_BIF0_N, INPUT, "OCP_BIF0_N", 0},
+  {           OCP_PRSNTB3_N, INPUT, "OCP_PRSNTB3_N", 0},
+  {              FAN_ON_AUX, INPUT,  "FAN_ON_AUX", 0},
+  {           OCP_SMB_RST_N, OUTPUT, "OCP_SMB_RST_N", 0},
+  {           OCP_PRSNTB0_N, OUTPUT, "OCP_PRSNTB0_N", 0},
+  {              OCP_BIF1_N, OUTPUT, "OCP_BIF1_N", 0},
+  {            OCP_SLOT_ID0, OUTPUT, "OCP_SLOT_ID0", 0},
+  {            OCP_SLOT_ID1, OUTPUT, "OCP_SLOT_ID1", 0},
+  {           OCP_PRSNTB2_N, OUTPUT, "OCP_PRSNTB2_N", 0},
+  {              SCAN_VER_1, INPUT, "SCAN_VER_1", 0},
+  {             PHY_RESET_N, OUTPUT, "PHY_RESET_N", 0},
+  {           RBT_ISOLATE_N, OUTPUT, "RBT_ISOLATE_N", 0},
+  {              OCP_BIF2_N, OUTPUT, "OCP_BIF2_N", 0},
+  {              OCP_WAKE_N, OUTPUT, "OCP_WAKE_N", 0},
+  {               TEMP_WARN, INPUT,  "TEMP_WARN", 0},
+  {               TEMP_CRIT, INPUT,  "TEMP_CRIT", 0},
+
+};
+
+#define STATIC_PIN_CNT        (sizeof(staticPins) / sizeof(pin_mgt_t))
 
 // CLI Command Table structure
 typedef struct {
@@ -48,53 +131,34 @@ typedef struct {
 // EEPROM data storage struct
 typedef struct {
     uint32_t        sig;      // unique EEPROMP signature (see #define)
-    float           K;        // K constant for LED equations
 
-    // these were used in ADC driver development, not for production
-    bool            enCorrection;
-    int             offsetError;
-    int             gainError;
+    // TODO add more data
 
 } EEPROM_data_t;
-
-// LED measurement
-typedef struct {
-    float       lv;
-    float       vC;
-    uint16_t    colorCounts;
-
-    uint16_t    intensity;
-    float       vI;
-    uint16_t    intensityCounts;
-
-} led_meas_t;
 
 // Constant Data
 const char      hello[] = "Dell Xavier NIC 3.0 Test Board V";
 const char      cliPrompt[] = "ltf> ";
 const int       promptLen = sizeof(cliPrompt);
-const float     ADCGain = 2.0;
-const float     ADCVrefA = 2.5;
-const float     voltsPerCount = ADCVrefA / 4095.0;
 const uint32_t  EEPROM_signature = 0xDE110C02;  // "DeLL Open Compute 02 (Xavier)"
-INA219::t_i2caddr       u2 = INA219::t_i2caddr(64);
-INA219::t_i2caddr       u3 = INA219::t_i2caddr(56);
-INA219          u2Monitor(u2);
-INA219          u3Monitor(u3);
+
+// INA219 stuff (Un is chip ID on schematic)
+INA219::t_i2caddr   u2 = INA219::t_i2caddr(64);
+INA219::t_i2caddr   u3 = INA219::t_i2caddr(65);
+INA219              u2Monitor(u2);
+INA219              u3Monitor(u3);
 
 // Variable data
-uint16_t        ADC_resultsArray[ADC_OVERSAMPLE_COUNT+1];
 char            outBfr[OUTBFR_SIZE];
+pin_mgt_t       dynamicPins[STATIC_PIN_CNT];
 
 // FLASH/EEPROM Data buffer
-EEPROM_data_t       EEPROMData;
+EEPROM_data_t   EEPROMData;
 
 // --------------------------------------------
 // Forward function prototypes
 // --------------------------------------------
 void EEPROM_Save(void);
-void ADC_EnableCorrection(void);
-uint16_t ADC_Read(uint8_t ch);
 int waitAnyKey(void);
 
 // prototypes for CLI-called functions
@@ -103,30 +167,27 @@ int waitAnyKey(void);
 // global in tokens[] with tokens[0] = command entered and
 // arg count does not include the command token
 int help(int);
-int calib(int);
 int curCmd(int);
 int rawRead(int);
-int setK(int);
-int readLoop(int);
-int readTemp(int);
+int setCmd(int);
 int debug(int);
-int calib(int);
+int readCmd(int);
+int writeCmd(int);
+int pinCmd(int);
 
 // CLI token stack
 char                *tokens[MAX_TOKENS];
-
-led_meas_t      currentMeasurement;
 
 // CLI command table
 // format is "command", function, required arg count, "help line 1", "help line 2" (2nd line can be NULL)
 const cli_entry     cmdTable[] = {
     {"debug",    debug, -1, "Debug functions mostly for developer use.", "'debug reset' resets board; 'debug dump' dumps EEPROM"},
     {"help",       help, 0, "THIS DOES NOT DISPLAY ON PURPOSE", " "},
-    {"check",  readLoop, 0, "Continuous loop reading raw sensor data.", "Hit any key to exit loop."},
     {"current",  curCmd, 0, "Read current for 12V and 3.3V rails.", " "},
-    {"temp",   readTemp, 0, "Read board (not MCU core) temperature sensor.", "Reports temperature in degrees C and F."},
-    {"set",        setK, 2, "Sets a stored parameter.", "set k 1.234 sets K constant."},
-    {"calib",     calib, 0, "Calibrate board LED sensor", "Uses LTF Calibration Board LEDs"},
+    {"set",      setCmd, 2, "Sets a stored parameter.", "set k 1.234 sets K constant."},
+    {"read",    readCmd, 1, "Read input pin.", "read <pin_number> (Arduino numbering)"},
+    {"write",  writeCmd, 2, "Write output pin.", "write <pin_number> <0|1> (Arduino numbering)"},
+    {"pins",     pinCmd, 0, "Displays pin names and Arduino numbers", " "},
 };
 
 #define CLI_ENTRIES     (sizeof(cmdTable) / sizeof(cli_entry))
@@ -231,30 +292,37 @@ bool cli(char *raw)
 } // cli()
 
 //===================================================================
-//                         CALIBRATION
-//===================================================================
-
-// --------------------------------------------
-// calib() - automatic LED calibration
-// --------------------------------------------
-int calib(int arg)
-{
-    int       keyPressed;
-
-    SerialUSB.println("Power the LTF Calibration Board and select the GREEN LED now.");
-    SerialUSB.println("Press 'y' to begin calibration, or 'n' to exit.");
-    keyPressed = toupper(waitAnyKey());
-    if ( keyPressed != 'Y' )
-        return(0);
-
-    SerialUSB.println("Starting measurements, please wait...");
-
-    return(0);
-}
-
-//===================================================================
 //                     DEBUG FUNCTIONS
 //===================================================================
+
+int pinCmd(int arg)
+{
+    int         count = STATIC_PIN_CNT;
+    int         pinNo = 0;
+
+    while ( count > 0 )
+    {
+      if ( count == 1 )
+      {
+          sprintf(outBfr, "%2d %20s %c", staticPins[pinNo].pinNo, staticPins[pinNo].name,
+                  staticPins[pinNo].pinFunc == INPUT ? 'I' : 'O');
+          SerialUSB.println(outBfr);
+          break;
+      }
+      else
+      {
+          sprintf(outBfr, "%2d %20s %c               %2d %20s %c", 
+                  staticPins[pinNo].pinNo, staticPins[pinNo].name, staticPins[pinNo].pinFunc == INPUT ? 'I' : 'O',
+                  staticPins[pinNo+1].pinNo, staticPins[pinNo+1].name, staticPins[pinNo+1].pinFunc == INPUT ? 'I' : 'O');
+          SerialUSB.println(outBfr);
+          count -= 2;
+          pinNo += 2;
+      }
+
+      SerialUSB.flush();
+      delay(75);
+    }
+}
 
 // --------------------------------------------
 // debug_scan() - I2C bus scanner
@@ -320,45 +388,6 @@ void debug_dump_eeprom(void)
     SerialUSB.println("EEPROM Contents:");
     SerialUSB.print("Signature:     ");
     SerialUSB.println(EEPROMData.sig, HEX);
-    sprintf(outBfr, "%8.4f", EEPROMData.K);
-    SerialUSB.print("K Constant:   ");
-    SerialUSB.println(outBfr);
-
-    if ( EEPROMData.enCorrection )
-    {
-      SerialUSB.print("ADC Correct:   ");
-      SerialUSB.println("Enabled");
-      SerialUSB.print("Gain ERR:   ");
-      SerialUSB.println(EEPROMData.gainError, DEC);
-      SerialUSB.print("Offset ERR: ");
-      SerialUSB.println(EEPROMData.offsetError, DEC);
-    }
-    else
-      SerialUSB.println("Disabled");
-}
-
-void debug_read(void)
-{
-    uint16_t            rawCounts;
-    float               volts;
-
-    // debug tool that reads ADC channels 0-5 although not all
-    // are used by this project
-    for ( uint8_t i = 0; i < 6; i++ )
-    {
-        rawCounts = ADC_Read(i);
-        volts = rawCounts * voltsPerCount * ADCGain;
-        sprintf(outBfr, "Ch %d %4d %8.3f V ", i, rawCounts, volts);
-        SerialUSB.print(outBfr);
-        if ( i == 1 )
-          SerialUSB.println("ARef");
-        else if ( i == 2 )
-          SerialUSB.println("Color");
-        else if ( i ==3 )
-          SerialUSB.println("Intensity");
-        else
-          SerialUSB.println("not used");
-    }
 }
 
 // --------------------------------------------
@@ -372,7 +401,6 @@ int debug(int arg)
         SerialUSB.println("\tscan ... I2C bus scanner");
         SerialUSB.println("\treset .. Reset board");
         SerialUSB.println("\tdump ... Dump EEPROM");
-        SerialUSB.println("\tread ... Raw ADC read (channels 0-3)");
         return(0);
     }
 
@@ -382,8 +410,6 @@ int debug(int arg)
       debug_reset();
     else if ( strcmp(tokens[1], "dump") == 0 )
       debug_dump_eeprom();
-    else if ( strcmp(tokens[1], "read") == 0 )
-      debug_read();
     else
       SerialUSB.println("Invalid debug command");
 
@@ -391,268 +417,45 @@ int debug(int arg)
 }
 
 //===================================================================
-//                            ADC Stuff
-//===================================================================
-
-// --------------------------------------------
-// syncADC() - Wait for ADC sync complete
-// --------------------------------------------
-static void syncADC() 
-{
-  while (ADC->STATUS.bit.SYNCBUSY) {};
-}
-
-// --------------------------------------------
-// ADC_Init() - Initialze the ADC
-// --------------------------------------------
-void ADC_Init(void)
-{
-  uint32_t        bias, linearity;
-
-  // enable APB clock
-  PM->APBCMASK.reg |= PM_APBCMASK_ADC;
-
-  // enable GCLK1 
-  GCLK->CLKCTRL.reg = GCLK_CLKCTRL_CLKEN | GCLK_CLKCTRL_GEN_GCLK1 | GCLK_CLKCTRL_ID_ADC;
-  while ( GCLK->STATUS.bit.SYNCBUSY) {};
-  
-  // get factory calib data from NVRAM
-  bias = (*((uint32_t *) ADC_FUSES_BIASCAL_ADDR) & ADC_FUSES_BIASCAL_Msk) >> ADC_FUSES_BIASCAL_Pos;
-  linearity = (*((uint32_t *) ADC_FUSES_LINEARITY_0_ADDR) & ADC_FUSES_LINEARITY_0_Msk) >> ADC_FUSES_LINEARITY_0_Pos;
-  linearity |= ((*((uint32_t *) ADC_FUSES_LINEARITY_1_ADDR) & ADC_FUSES_LINEARITY_1_Msk) >> ADC_FUSES_LINEARITY_1_Pos) << 5;
-  syncADC();
-
-  // write factory calibration data to ADC
-  ADC->CALIB.reg = ADC_CALIB_BIAS_CAL(bias) | ADC_CALIB_LINEARITY_CAL(linearity);
-  syncADC();
-
-  // set analog reference - AREFA = pin 4 = 2.5V ref supply
-  ADC->REFCTRL.bit.REFSEL = ADC_REFCTRL_REFSEL_AREFA_Val;
-
-  // enable reference buffer offset compensation
-  ADC->REFCTRL.bit.REFCOMP = 1;
-
-  ADC->AVGCTRL.reg = ADC_AVGCTRL_SAMPLENUM_1;
-
-  // set clock prescalar & resolution
-  // this sets ADC to run at 31.25 kHz
-//  ADC->CTRLB.reg = ADC_CTRLB_PRESCALER_DIV4 | ADC_CTRLB_RESSEL_12BIT;
-  ADC->CTRLB.bit.PRESCALER = ADC_CTRLB_PRESCALER_DIV4_Val;
-  ADC->CTRLB.bit.RESSEL = ADC_CTRLB_RESSEL_12BIT_Val;
-  ADC->CTRLB.bit.FREERUN = 1;
-
-  // adjust sample time for possible input impediance (allow ADC to charge cap)
-  ADC->SAMPCTRL.reg = ADC_SAMPCTRL_SAMPLEN(1);
-
-  ADC->INPUTCTRL.reg = ADC_INPUTCTRL_GAIN_DIV2;
-  syncADC();
-
-  if ( EEPROMData.enCorrection )
-  {
-    ADC_EnableCorrection();
-  }
-
-  syncADC();
-  ADC->CTRLA.bit.ENABLE = 1;
-  syncADC();
-}
-
-// --------------------------------------------
-// ADC_EnableCorrection - not in use
-// --------------------------------------------
-void ADC_EnableCorrection(void)
-{
-// set offset and gain correction values 
-// see section 33.6.7-10 of the MCU datasheet
-// used calculator at https://blog.thea.codes/getting-the-most-out-of-the-samd21-adc/
-// Setup: the "#if" above should be zero to eliminate correction in the ADC for calibration.
-// First, set breakpoint in ADC_Read() after both ADC channels have been read, then input the
-// 'raw' decimal values from the debugger into the online calculator.  Transferred the calculator's
-// results into offset_error and gain_error then re-compiled.  This resulted in a significant
-// improvement in accuracy between 0.2V and 3.2V.
-// Input: 0.284V ADC: 220
-// Input: 3.3V   ADC: 4094
-
-
-  syncADC();
-  ADC->OFFSETCORR.reg = ADC_OFFSETCORR_OFFSETCORR(EEPROMData.offsetError);
-  ADC->GAINCORR.reg = ADC_GAINCORR_GAINCORR(EEPROMData.gainError);
-  ADC->CTRLB.bit.CORREN = 1;
-
-}
-
-// --------------------------------------------
-// ADC_Read() - read ADC channel as 16-bits
-// --------------------------------------------
-uint16_t ADC_Read(uint8_t ch)
-{
-  uint16_t      result;
-  uint32_t      sum = 0;
-
-  syncADC();
-  ADC->INPUTCTRL.bit.MUXPOS = ch;
-  ADC->INPUTCTRL.bit.MUXNEG = ADC_INPUTCTRL_MUXNEG_GND_Val;
-  syncADC();
-
-  for ( int i = 0; i <= ADC_OVERSAMPLE_COUNT; i++ )
-  {
-#if 0
-    syncADC();
-
-// switched to free-running mode
-    ADC->SWTRIG.bit.START = 1;
-
-    while ( ADC->INTFLAG.bit.RESRDY == 0 ) ;
-#endif
-    // read result - also clears RESRDY bit
-    result = ADC->RESULT.bit.RESULT;
-//    ADC->INTFLAG.bit.RESRDY = 1;
-
-    delay(ADC_SAMPLING_DELAY);
-
-    // skip first measurement per datasheet
-    if ( i == 0 )
-      continue;
-
-    ADC_resultsArray[i - 1] = result;
-    sum += result;
-  }
-
-  result = (uint16_t) (sum / ADC_OVERSAMPLE_COUNT);
-  return(result);
-}
-
-void ledRawRead(led_meas_t *m)
-{
-    // ----------------------
-    // Read both ADC channels
-    // ----------------------
-    m->intensityCounts = ADC_Read(SPECTRA_INTENSITY_OUT_PIN);
-    delay(1000);
-    m->colorCounts = ADC_Read(SPECTRA_COLOR_OUT_PIN);
-
-    // ----------------------
-    // Calculate Intensity
-    // Datasheet says the V corresponds to mcd!
-    // ----------------------
-    m->vI = m->intensityCounts * voltsPerCount * ADCGain;
-    m->intensity = (uint16_t) (m->intensityCounts * 0.0002);
-
-    // ----------------------
-    // Calculate Color
-    // ----------------------
-    m->vC = m->colorCounts * voltsPerCount * ADCGain;
-
-    // formula from datasheet with K factor added in
-    m->lv = ((m->vC + 4.0) * 100.0) * EEPROMData.K;
-}
-  /* removed, because 2.5V supply fluctuates constantly causing measurements to vary
-    // ----------------------
-    // Read ADC Vref (2.5V)
-    // ----------------------
-    m->aRefRaw = ADC_Read(ADC_VREF_PIN) * ADCGain;
-    m->aRef = m->aRefRaw  * voltsPerCount;
-    voltsPerCount = m->aRef  / 4095;
-    sprintf(outBfr, "ADC Vref:           %4d %5.3f V", (int) m->aRefRaw, m->aRef);
-    SerialUSB.println(outBfr);
-    */
-
-//===================================================================
 //                          CURRENT Command
 //===================================================================
 int curCmd(int arg)
 {
+    float           tempF;
 
-    SerialUSB.println("Acquiring U2 current data, please wait...");
+    SerialUSB.println("Acquiring current data, please wait...");
     SerialUSB.flush();
 
-  SerialUSB.print("raw shunt voltage: ");
-  SerialUSB.println(u2Monitor.shuntVoltageRaw());
-  
-  SerialUSB.print("raw bus voltage:   ");
-  SerialUSB.println(u2Monitor.busVoltageRaw());
-  
-  SerialUSB.println("--");
-  
-  SerialUSB.print("shunt voltage: ");
-  SerialUSB.print(u2Monitor.shuntVoltage() * 1000, 4);
-  SerialUSB.println(" mV");
-  
-  SerialUSB.print("shunt current: ");
-  SerialUSB.print(u2Monitor.shuntCurrent() * 1000, 4);
-  SerialUSB.println(" mA");
-  
-  SerialUSB.print("bus voltage:   ");
-  SerialUSB.print(u2Monitor.busVoltage(), 4);
-  SerialUSB.println(" V");
-  
-  SerialUSB.print("bus power:     ");
-  SerialUSB.print(u2Monitor.busPower() * 1000, 4);
-  SerialUSB.println(" mW");
-  
-  SerialUSB.println(" ");
-  SerialUSB.println(" ");
+    float v12I = u2Monitor.shuntCurrent() * 1000.0;
+    float v12V = u2Monitor.busVoltage();
+    float v12Power = u2Monitor.busPower() * 1000.0;
+
+    delay(100);
+
+    float v3p3I = u3Monitor.shuntCurrent() * 1000.0;
+    float v3p3V = u3Monitor.busVoltage();
+    float v3p3Power = u3Monitor.busPower() * 1000.0;
+
+    sprintf(outBfr, "12V shunt current:  %5.2f mA", v12I);
+    SerialUSB.println(outBfr);
+    SerialUSB.flush();
+
+    sprintf(outBfr, "12V bus voltage:    %5.2f V", v12V);
+    SerialUSB.println(outBfr);
+    SerialUSB.flush();
+
+    sprintf(outBfr, "3.3V shunt current: %5.2f mA", v3p3I);
+    SerialUSB.println(outBfr);
+    SerialUSB.flush();
+
+    sprintf(outBfr, "3.3V bus voltage:   %5.2f V", v3p3V);
+    SerialUSB.println(outBfr);  
+    SerialUSB.flush();
 
     return(0);
 
 } // curCmd()
 
-//===================================================================
-//                              TEMP Command
-//===================================================================
-int readTemp(int arg)
-{
-  signed char         i2cData;
-  short int           curTemp;
-  float               degF;
-
-  Wire.beginTransmission(AT30TS74_I2C_ADDR);
-  Wire.write(0);      // set pointer register
-  Wire.endTransmission();
-  delay(65);
-  Wire.requestFrom(AT30TS74_I2C_ADDR, 1, false);
-
-  // read MSB only - sufficient for this project
-  i2cData = Wire.read();
-
-  // data is two's complement so nothing needs be done
-  // other than recast the var
-  curTemp = (short) i2cData;
-  degF = ((curTemp * 9.0) / 5.0) + 32.0;
-
-  SerialUSB.print("Board temp: ");
-  SerialUSB.print(curTemp);
-  SerialUSB.print(" C/");
-  SerialUSB.print((int) degF, DEC);
-  SerialUSB.println(" F");
-
-  return(0);
-}
-
-//===================================================================
-//                             CHECK Command
-//===================================================================
-int readLoop(int arg)
-{
-  SerialUSB.println("Entering continuous read loop, press any key to stop");
-
-  while ( SerialUSB.available() == 0 )
-  {
-      curCmd(0);
-      readTemp(0);
-      SerialUSB.println(" ");
-      delay(1000);
-      SerialUSB.flush();
-  }
-
-  // flush any other chars user hit when exiting the loop
-  while ( SerialUSB.available() )
-    (void) SerialUSB.read();
-
-  SerialUSB.println("Loop aborted by user");
-  SerialUSB.flush();
-  return(0);
-}
 // --------------------------------------------
 // waitAnyKey() - wait for any key pressed
 //
@@ -667,6 +470,60 @@ int waitAnyKey(void)
 
     charIn = SerialUSB.read();
     return(charIn);
+}
+
+const char *getPinName(int pinNo)
+{
+    for ( int i = 0; i < STATIC_PIN_CNT; i++ )
+    {
+        if ( pinNo == staticPins[i].pinNo )
+            return(staticPins[i].name);
+    }
+
+    return("Unknown");
+}
+
+//===================================================================
+//                    READ, WRITE COMMANDS
+//===================================================================
+int readCmd(int arg)
+{
+    uint8_t       pin;
+    int           pinNo = atoi(tokens[1]);
+
+    if ( pinNo > PINS_COUNT )
+    {
+        SerialUSB.println("Invalid pin number; please use Arduino numbering");
+        return(1);
+    }
+
+    pin = digitalRead((pin_size_t) pinNo);
+    sprintf(outBfr, "Pin %d (%s) = %d", pinNo, getPinName(pinNo), pin);
+    SerialUSB.println(outBfr);
+}
+
+int writeCmd(int arg)
+{
+    uint8_t     pinNo = atoi(tokens[1]);
+    uint8_t     value = atoi(tokens[2]);
+
+    if ( pinNo > PINS_COUNT )
+    {
+        SerialUSB.println("Invalid pin number; please use Arduino numbering");
+        return(1);
+    }    
+
+    if ( value == 0 || value == 1 )
+      ;
+    else
+    {
+        SerialUSB.println("Invalid pin value; please enter 0 or 1");
+        return(1);
+    }
+
+    digitalWrite(pinNo, value);
+    sprintf(outBfr, "Wrote %d to pin # %d (%s)", value, pinNo, getPinName(pinNo));
+    SerialUSB.println(outBfr);
 }
 
 //===================================================================
@@ -708,16 +565,16 @@ int help(int arg)
 //
 // set <parameter> <value>
 // 
-// Supported parameters: k, gain, offset
+// Supported parameters: 
 //===================================================================
-int setK(int arg)
+int setCmd(int arg)
 {
     char          *parameter = tokens[1];
     String        userEntry = tokens[2];
     float         fValue;
     int           iValue;
     bool          isDirty = false;
-
+#if 0
     if ( strcmp(parameter, "k") == 0 )
     {
         fValue = userEntry.toFloat();
@@ -777,6 +634,7 @@ int setK(int arg)
         SerialUSB.println("Invalid parameter name");
         return(1);
     }
+#endif
 
     if ( isDirty )
         EEPROM_Save();
@@ -825,10 +683,6 @@ void EEPROM_Read(void)
 void EEPROM_Defaults(void)
 {
     EEPROMData.sig = EEPROM_signature;
-    EEPROMData.K = 1.0;
-    EEPROMData.enCorrection = false;
-    EEPROMData.gainError = 1400;
-    EEPROMData.offsetError = -69;
 }
 
 // --------------------------------------------
@@ -863,7 +717,8 @@ bool EEPROM_InitLocal(void)
     }
 
     return(rc);
-}
+
+} // EEPROM_InitLocal()
 
 //===================================================================
 //                      setup() - Initialization
@@ -872,31 +727,19 @@ void setup()
 {
   bool      LEDstate = false;
 
-  // configure pins AIN1, AIN2 & AIN3 (PA3, PB08 & PB09)
-  // NOTE: PA3 = 2.5V ref
-  // NOTE: Group 1 = PB
-  PORT->Group[0].DIRCLR.reg = PORT_PA02;
-  PORT->Group[1].DIRCLR.reg = PORT_PB09 | PORT_PB09;
-   
-  PORT->Group[0].PINCFG[3].reg |= PORT_PINCFG_PMUXEN;
-  PORT->Group[1].PINCFG[8].reg |= PORT_PINCFG_PMUXEN;
-  PORT->Group[1].PINCFG[9].reg |= PORT_PINCFG_PMUXEN;
-
-  // see section 7.1 in SAMD21 datasheet - multiplexed signals
-  // this is a bit wonky; this is vague about the odd/even pins partly
-  // due to Arduino abstraction, and partly because it's just not clear...
-  PORT->Group[1].PMUX[3].reg = PORT_PMUX_PMUXO_B;
-  PORT->Group[1].PMUX[4].reg = PORT_PMUX_PMUXO_B;
-
-  // TODO configure ADC AREFA pin
+  // configure all I/O pins
 
   // configure heartbeat LED pin and turn on which indicates that the
   // board is being initialized
   pinMode(PIN_LED, OUTPUT);
   digitalWrite(PIN_LED, LEDstate);
 
-
-
+  // configure I/O pins
+  for ( int i = 0; i < STATIC_PIN_CNT; i++ )
+  {
+      pinMode(staticPins[i].pinNo, staticPins[i].pinFunc);
+  }
+  
   // start serial over USB and wait for a connection
   // NOTE: Baud rate isn't applicable to USB but...
   // NOTE: Many libraries won't init unless Serial
@@ -912,9 +755,14 @@ void setup()
 
   // initialize system & libraries
   EEPROM_InitLocal();
-  ADC_Init();
-  Wire.begin();
+
   u2Monitor.begin();
+  u2Monitor.configure(INA219::RANGE_16V, INA219::GAIN_8_320MV, INA219::ADC_16SAMP, INA219::ADC_16SAMP, INA219::CONT_SH_BUS);
+  u2Monitor.calibrate(SHUNT_R, U2_SHUNT_MAX_V, U2_BUS_MAX_V, U2_MAX_CURRENT);
+
+  u3Monitor.begin();
+  u3Monitor.configure(INA219::RANGE_16V, INA219::GAIN_8_320MV, INA219::ADC_16SAMP, INA219::ADC_16SAMP, INA219::CONT_SH_BUS);
+  u3Monitor.calibrate(SHUNT_R, U3_SHUNT_MAX_V, U3_BUS_MAX_V, U3_MAX_CURRENT);
 
   SerialUSB.println(" ");
   SerialUSB.print(hello);
@@ -960,6 +808,7 @@ void loop()
       {
           // line feed - echo it
           SerialUSB.println(byteIn);
+          SerialUSB.flush();
       }
       else if ( byteIn == 0x0d )
       {
@@ -971,6 +820,7 @@ void loop()
           inCharCount = 0;
           strcpy(lastCmd, inBfr);
           cli(inBfr);
+          SerialUSB.flush();
       }
       else if ( byteIn == 0x1b )
       {
@@ -985,8 +835,11 @@ void loop()
                     byteIn = SerialUSB.read();
                     if ( byteIn == 'A' )
                     {
+                        // up arrow: echo last command entered then execute in CLI
                         SerialUSB.println(lastCmd);
+                        SerialUSB.flush();
                         cli(lastCmd);
+                        SerialUSB.flush();
                     }
                 }
             }
@@ -1002,12 +855,14 @@ void loop()
             SerialUSB.write(bs, 4);
             SerialUSB.write(' ');
             SerialUSB.write(bs, 4);
+            SerialUSB.flush();
         }
     }
     else
     {
         // all other keys get echoed & stored in buffer
         SerialUSB.write((char) byteIn);
+        SerialUSB.flush();
         inBfr[inCharCount++] = byteIn;
     }
   }
