@@ -4,7 +4,6 @@
 #include "FlashAsEEPROM_SAMD.h"
 #include "INA219.h"
 
-#define AT30TS74_I2C_ADDR           72 // 0x48
 #define FAST_BLINK_DELAY            200
 #define SLOW_BLINK_DELAY            1000
 #define CMD_NAME_MAX                12
@@ -13,7 +12,7 @@
 
 // disable EEPROM/FLASH library driver debug, because it uses Serial 
 // not SerialUSB and may hang on startup as a result
-#define FLASH_DEBUG               0
+#define FLASH_DEBUG               1
 
 // possible CLI errors
 #define CLI_ERR_NO_ERROR          0
@@ -33,40 +32,51 @@
 #define U3_MAX_CURRENT  3.0       /* In our case this is enaugh even tho shunt is capable to 50 A*/
 #define SHUNT_R         0.01      /* Shunt resistor in ohms (R211 and R210 are the same ohms) */
 
-// I/O Pins (using Arduino scheme, see variant files
+// I/O Pins (using Arduino scheme, see variant.c the spacing between defines aligns with the
+// comments in that file for readability purposes
 #define OCP_SCAN_LD_N         0   // PA22
 #define OCP_MAIN_PWR_EN       1   // PA23
 #define OCP_SCAN_DATA_IN      2   // PA10
 #define OCP_SCAN_CLK          3   // PA11
+
 #define OCP_PRSNTB1_N         4   // PB10
 #define PCIE_PRES_N           5   // PB11
 #define UART_RX_UNUSED        6   // PA20
 #define SCAN_VER_0            7   // PA21
+
 #define OCP_SCAN_DATA_OUT     8   // PA08
 #define OCP_AUX_PWR_EN        9   // PA09
 #define UART_TX_UNUSED        10  // PA19
+
 #define MCU_SDA               11  // PA16
 #define MCU_SCL               12  // PA17
-// NOTE: LED_PIN 13 defined in variant.h
+
+// NOTE: LED_PIN 13 PB23 defined in variant.h
 #define OCP_PWRBRK_N          14  // PB22
+
 #define OCP_BIF0_N            15  // PA02
 #define OCP_PRSNTB3_N         16  // PB02
 #define FAN_ON_AUX            17  // PB08
 #define OCP_SMB_RST_N         18  // PB09
+
 #define LFF_PORT0             19  // PA05 (not used)
 #define LFF_PORT1             20  // PA06 (not used)
 #define LFF_PORT2             21  // PA07 (not used)
+
 // NOTE: USB_HS_DP (22) and USB_HS_DN (23) not available to CLI
-#define OCP_PRSNTB0_N         24
+#define OCP_PRSNTB0_N         24  // PA18
 #define OCP_BIF1_N            25  // PA03
+
 #define OCP_SLOT_ID0          26  // PA12
 #define OCP_SLOT_ID1          27  // PA13
 #define OCP_PRSNTB2_N         28  // PA14
 #define SCAN_VER_1            29  // PA15
+
 #define PHY_RESET_N           30  // PA27
 #define RBT_ISOLATE_N         31  // PA28
 #define OCP_BIF2_N            32  // PA04
 #define OCP_WAKE_N            33  // PB03
+
 #define TEMP_WARN             34  // PA00
 #define TEMP_CRIT             35  // PA01
 
@@ -192,12 +202,21 @@ const cli_entry     cmdTable[] = {
 
 #define CLI_ENTRIES     (sizeof(cmdTable) / sizeof(cli_entry))
 
+void terminalOut(char *msg)
+{
+    SerialUSB.println(msg);
+    SerialUSB.flush();
+    delay(50);
+}
+
 // --------------------------------------------
 // doPrompt() - Write prompt to terminal
 // --------------------------------------------
 void doPrompt(void)
 {
-    SerialUSB.println(" ");
+    SerialUSB.write(0x0a);
+    SerialUSB.write(0x0d);
+    SerialUSB.flush();
     SerialUSB.print(cliPrompt);
     SerialUSB.flush();
 }
@@ -239,7 +258,7 @@ bool cli(char *raw)
 
     if ( tokNdx >= MAX_TOKENS )
     {
-        SerialUSB.println("Too many arguments in command line!");
+        terminalOut("Too many arguments in command line!");
         doPrompt();
         return(false);
     }
@@ -277,13 +296,13 @@ bool cli(char *raw)
     if ( rc == false )
     {
         if ( error == CLI_ERR_CMD_NOT_FOUND )
-         SerialUSB.println("Invalid command");
+         terminalOut("Invalid command");
         else if ( error == CLI_ERR_TOO_FEW_ARGS )
-          SerialUSB.println("Not enough arguments for this command, check help.");
+          terminalOut("Not enough arguments for this command, check help.");
         else if ( error == CLI_ERR_TOO_MANY_ARGS )
-          SerialUSB.println("Too many arguments for this command, check help.");
+          terminalOut("Too many arguments for this command, check help.");
         else
-          SerialUSB.println("Unknown parser s/w error");
+          terminalOut("Unknown parser s/w error");
     }
 
     doPrompt();
@@ -295,32 +314,32 @@ bool cli(char *raw)
 //                     DEBUG FUNCTIONS
 //===================================================================
 
+// --------------------------------------------
+// pinCmd() - dump all I/O pins on terminal
+// --------------------------------------------
 int pinCmd(int arg)
 {
     int         count = STATIC_PIN_CNT;
-    int         pinNo = 0;
+    int         index = 0;
 
     while ( count > 0 )
     {
       if ( count == 1 )
       {
-          sprintf(outBfr, "%2d %20s %c", staticPins[pinNo].pinNo, staticPins[pinNo].name,
-                  staticPins[pinNo].pinFunc == INPUT ? 'I' : 'O');
-          SerialUSB.println(outBfr);
+          sprintf(outBfr, "%2d %20s %c ", staticPins[index].pinNo, staticPins[index].name,
+                  staticPins[index].pinFunc == INPUT ? 'I' : 'O');
+          terminalOut(outBfr);
           break;
       }
       else
       {
-          sprintf(outBfr, "%2d %20s %c               %2d %20s %c", 
-                  staticPins[pinNo].pinNo, staticPins[pinNo].name, staticPins[pinNo].pinFunc == INPUT ? 'I' : 'O',
-                  staticPins[pinNo+1].pinNo, staticPins[pinNo+1].name, staticPins[pinNo+1].pinFunc == INPUT ? 'I' : 'O');
-          SerialUSB.println(outBfr);
+          sprintf(outBfr, "%2d %20s %c\t\t%2d %20s %c ", 
+                  staticPins[index].pinNo, staticPins[index].name, staticPins[index].pinFunc == INPUT ? 'I' : 'O',
+                  staticPins[index+1].pinNo, staticPins[index+1].name, staticPins[index+1].pinFunc == INPUT ? 'I' : 'O');
+          terminalOut(outBfr);
           count -= 2;
-          pinNo += 2;
+          index += 2;
       }
-
-      SerialUSB.flush();
-      delay(75);
     }
 }
 
@@ -337,7 +356,7 @@ void debug_scan(void)
   int         scanCount = 0;
   uint32_t    startTime = millis();
 
-  SerialUSB.println ("Scanning I2C bus...");
+  terminalOut ("Scanning I2C bus...");
 
   for (byte i = 8; i < 120; i++)
   {
@@ -346,26 +365,23 @@ void debug_scan(void)
     if (Wire.endTransmission() == 0)
     {
       sprintf(outBfr, "Found device at address %d 0x%2X", i, i);
-      SerialUSB.println(outBfr);
+      terminalOut(outBfr);
       count++;
       delay(10);  
     } 
   } 
 
-  SerialUSB.print("Scan complete, addresses scanned:");
-  SerialUSB.print(scanCount);
-  SerialUSB.print(" in ");
-  SerialUSB.print(millis() - startTime);
-  SerialUSB.println(" ms");
+  sprintf(outBfr, "Scan complete, %d addresses scanned in %d ms", scanCount, millis() - startTime);
+  terminalOut(outBfr);
 
   if ( count )
   {
     sprintf(outBfr, "Found %d I2C device(s)", count);
-    SerialUSB.println(outBfr);
+    terminalOut(outBfr);
   }
   else
   {
-    SerialUSB.println("No I2c device found");
+    terminalOut("No I2c device found");
   }
 }
 
@@ -374,8 +390,8 @@ void debug_scan(void)
 // --------------------------------------------
 void debug_reset(void)
 {
-    SerialUSB.println("Board reset will disconnect USB-serial connection now.");
-    SerialUSB.println("Repeat whatever steps you took to connect to the board.");
+    terminalOut("Board reset will disconnect USB-serial connection now.");
+    terminalOut("Repeat whatever steps you took to connect to the board.");
     delay(1000);
     NVIC_SystemReset();
 }
@@ -385,9 +401,9 @@ void debug_reset(void)
 // --------------------------------------------
 void debug_dump_eeprom(void)
 {
-    SerialUSB.println("EEPROM Contents:");
-    SerialUSB.print("Signature:     ");
-    SerialUSB.println(EEPROMData.sig, HEX);
+    terminalOut("EEPROM Contents:");
+    sprintf(outBfr, "Signature: %08X", EEPROMData.sig);
+    terminalOut(outBfr);
 }
 
 // --------------------------------------------
@@ -397,10 +413,10 @@ int debug(int arg)
 {
     if ( arg == 0 )
     {
-        SerialUSB.println("Debug commands are:");
-        SerialUSB.println("\tscan ... I2C bus scanner");
-        SerialUSB.println("\treset .. Reset board");
-        SerialUSB.println("\tdump ... Dump EEPROM");
+        terminalOut("Debug commands are:");
+        terminalOut("\tscan ... I2C bus scanner");
+        terminalOut("\treset .. Reset board");
+        terminalOut("\tdump ... Dump EEPROM");
         return(0);
     }
 
@@ -411,7 +427,7 @@ int debug(int arg)
     else if ( strcmp(tokens[1], "dump") == 0 )
       debug_dump_eeprom();
     else
-      SerialUSB.println("Invalid debug command");
+      terminalOut("Invalid debug command");
 
     return(0);
 }
@@ -423,8 +439,7 @@ int curCmd(int arg)
 {
     float           tempF;
 
-    SerialUSB.println("Acquiring current data, please wait...");
-    SerialUSB.flush();
+    terminalOut("Acquiring current data, please wait...");
 
     float v12I = u2Monitor.shuntCurrent() * 1000.0;
     float v12V = u2Monitor.busVoltage();
@@ -437,20 +452,16 @@ int curCmd(int arg)
     float v3p3Power = u3Monitor.busPower() * 1000.0;
 
     sprintf(outBfr, "12V shunt current:  %5.2f mA", v12I);
-    SerialUSB.println(outBfr);
-    SerialUSB.flush();
+    terminalOut(outBfr);
 
     sprintf(outBfr, "12V bus voltage:    %5.2f V", v12V);
-    SerialUSB.println(outBfr);
-    SerialUSB.flush();
+    terminalOut(outBfr);
 
     sprintf(outBfr, "3.3V shunt current: %5.2f mA", v3p3I);
-    SerialUSB.println(outBfr);
-    SerialUSB.flush();
+    terminalOut(outBfr);
 
     sprintf(outBfr, "3.3V bus voltage:   %5.2f V", v3p3V);
-    SerialUSB.println(outBfr);  
-    SerialUSB.flush();
+    terminalOut(outBfr);  
 
     return(0);
 
@@ -486,6 +497,7 @@ const char *getPinName(int pinNo)
 //===================================================================
 //                    READ, WRITE COMMANDS
 //===================================================================
+
 int readCmd(int arg)
 {
     uint8_t       pin;
@@ -493,13 +505,16 @@ int readCmd(int arg)
 
     if ( pinNo > PINS_COUNT )
     {
-        SerialUSB.println("Invalid pin number; please use Arduino numbering");
+        terminalOut("Invalid pin number; please use Arduino numbering");
         return(1);
     }
 
+    // TODO alternative is bitRead() but it requires a port, so that
+    // would have to be extracted from the pin map
+    // digitalPinToPort(pin) yields port # if pin is Arduino style
     pin = digitalRead((pin_size_t) pinNo);
     sprintf(outBfr, "Pin %d (%s) = %d", pinNo, getPinName(pinNo), pin);
-    SerialUSB.println(outBfr);
+    terminalOut(outBfr);
 }
 
 int writeCmd(int arg)
@@ -509,7 +524,7 @@ int writeCmd(int arg)
 
     if ( pinNo > PINS_COUNT )
     {
-        SerialUSB.println("Invalid pin number; please use Arduino numbering");
+        terminalOut("Invalid pin number; please use Arduino numbering");
         return(1);
     }    
 
@@ -517,13 +532,13 @@ int writeCmd(int arg)
       ;
     else
     {
-        SerialUSB.println("Invalid pin value; please enter 0 or 1");
+        terminalOut("Invalid pin value; please enter 0 or 1");
         return(1);
     }
 
     digitalWrite(pinNo, value);
     sprintf(outBfr, "Wrote %d to pin # %d (%s)", value, pinNo, getPinName(pinNo));
-    SerialUSB.println(outBfr);
+    terminalOut(outBfr);
 }
 
 //===================================================================
@@ -531,14 +546,12 @@ int writeCmd(int arg)
 //===================================================================
 int help(int arg)
 {
-
-    SerialUSB.println(" ");
-    SerialUSB.print(hello);
-    SerialUSB.println(versString);
-    SerialUSB.println("Enter a command then press ENTER. Some commands require arguments, which must");
-    SerialUSB.println("be separated from the command and other arguments by a space.");
-    SerialUSB.println("Up arrow repeats the last command; backspace or delete erases the last");
-    SerialUSB.println("character entered. Commands available are:");
+    sprintf(outBfr, "%s %s", hello, versString);
+    terminalOut(outBfr);
+    terminalOut("Enter a command then press ENTER. Some commands require arguments, which must");
+    terminalOut("be separated from the command and other arguments by a space.");
+    terminalOut("Up arrow repeats the last command; backspace or delete erases the last");
+    terminalOut("character entered. Commands available are:");
 
     for ( int i = 0; i < (int) CLI_ENTRIES; i++ )
     {
@@ -546,15 +559,13 @@ int help(int arg)
         continue;
 
       sprintf(outBfr, "%s\t%s", cmdTable[i].cmd, cmdTable[i].help1);
-      SerialUSB.println(outBfr);
+      terminalOut(outBfr);
 
       if ( cmdTable[i].help2 != NULL )
       {
         sprintf(outBfr, "\t%s", cmdTable[i].help2);
-        SerialUSB.println(outBfr);
+        terminalOut(outBfr);
       }
-
-      SerialUSB.flush();
     }
 
     return(0);
@@ -612,7 +623,7 @@ int setCmd(int arg)
           if ( EEPROMData.enCorrection == true )
           {
               EEPROMData.enCorrection = false;
-              SerialUSB.println("ADC correction off");
+              terminalOut("ADC correction off");
               isDirty = true;
           }
         }
@@ -626,12 +637,12 @@ int setCmd(int arg)
         }
         else
         {
-          SerialUSB.println("Invalid ADC corr argument: must be 'on' or 'off'");
+          terminalOut("Invalid ADC corr argument: must be 'on' or 'off'");
         }
     }
     else
     {
-        SerialUSB.println("Invalid parameter name");
+        terminalOut("Invalid parameter name");
         return(1);
     }
 #endif
@@ -709,11 +720,11 @@ bool EEPROM_InitLocal(void)
       EEPROM_Save();
 
       rc = true;
-      SerialUSB.println("EEPROM validation FAILED, EEPROM initialized OK");
+      terminalOut("EEPROM validation FAILED, EEPROM initialized OK");
     }
     else
     {
-      SerialUSB.println("EEPROM validated OK");
+      terminalOut("EEPROM validated OK");
     }
 
     return(rc);
@@ -725,7 +736,8 @@ bool EEPROM_InitLocal(void)
 //===================================================================
 void setup() 
 {
-  bool      LEDstate = false;
+  bool        LEDstate = false;
+  pin_size_t  pinNo;
 
   // configure all I/O pins
 
@@ -737,7 +749,16 @@ void setup()
   // configure I/O pins
   for ( int i = 0; i < STATIC_PIN_CNT; i++ )
   {
-      pinMode(staticPins[i].pinNo, staticPins[i].pinFunc);
+      pinNo = staticPins[i].pinNo;
+      pinMode(pinNo, staticPins[i].pinFunc);
+
+      // increase drive strength on output pins
+      if ( staticPins[i].pinFunc == OUTPUT )
+      {
+          // see xavier/variants.cpp for the data in g_APinDescription[]
+          // source 7mA, sink 10mA
+          PORT->Group[g_APinDescription[pinNo].ulPort].PINCFG[g_APinDescription[pinNo].ulPin].bit.DRVSTR = 1;
+      }
   }
   
   // start serial over USB and wait for a connection
@@ -764,9 +785,8 @@ void setup()
   u3Monitor.configure(INA219::RANGE_16V, INA219::GAIN_8_320MV, INA219::ADC_16SAMP, INA219::ADC_16SAMP, INA219::CONT_SH_BUS);
   u3Monitor.calibrate(SHUNT_R, U3_SHUNT_MAX_V, U3_BUS_MAX_V, U3_MAX_CURRENT);
 
-  SerialUSB.println(" ");
-  SerialUSB.print(hello);
-  SerialUSB.println(versString);
+  sprintf(outBfr, "%s %s", hello, versString);
+  terminalOut(outBfr);
   doPrompt();
 
 } // setup()
@@ -807,7 +827,7 @@ void loop()
       if ( byteIn == 0x0a )
       {
           // line feed - echo it
-          SerialUSB.println(byteIn);
+          SerialUSB.write(0x0a);
           SerialUSB.flush();
       }
       else if ( byteIn == 0x0d )
@@ -815,7 +835,7 @@ void loop()
           // carriage return - EOL 
           // save as the last cmd (for up arrow) and call CLI with
           // the completed line less CR/LF
-          SerialUSB.println(" ");
+          terminalOut(" ");
           inBfr[inCharCount] = 0;
           inCharCount = 0;
           strcpy(lastCmd, inBfr);
@@ -836,7 +856,7 @@ void loop()
                     if ( byteIn == 'A' )
                     {
                         // up arrow: echo last command entered then execute in CLI
-                        SerialUSB.println(lastCmd);
+                        terminalOut(lastCmd);
                         SerialUSB.flush();
                         cli(lastCmd);
                         SerialUSB.flush();
