@@ -41,12 +41,12 @@
 
 #define OCP_PRSNTB1_N         4   // PB10
 #define PCIE_PRES_N           5   // PB11
-#define UART_RX_UNUSED        6   // PA20
+#define UART_TX_UNUSED        6   // PA20
 #define SCAN_VER_0            7   // PA21
 
 #define OCP_SCAN_DATA_OUT     8   // PA08
 #define OCP_AUX_PWR_EN        9   // PA09
-#define UART_TX_UNUSED        10  // PA19
+#define UART_RX_UNUSED        10  // PA19
 
 #define MCU_SDA               11  // PA16
 #define MCU_SCL               12  // PA17
@@ -73,15 +73,18 @@
 #define SCAN_VER_1            29  // PA15
 
 #define PHY_RESET_N           30  // PA27
-#define RBT_ISOLATE_N         31  // PA28
+#define RBT_ISOLATE_EN        31  // PA28
 #define OCP_BIF2_N            32  // PA04
 #define OCP_WAKE_N            33  // PB03
 
 #define TEMP_WARN             34  // PA00
 #define TEMP_CRIT             35  // PA01
 
+// alises to support pin_mgt_t pinFunc - because Arduino doesn't
+// "like" writing to an input pin
 #define INPUT_PIN             INPUT
 #define OUTPUT_PIN            OUTPUT
+#define IN_OUT_PIN            4             // reserved future when DIP switches won't short
 
 // Version
 const char      versString[] = "1.0.0";
@@ -91,42 +94,7 @@ typedef struct {
   uint8_t           pinNo;
   uint8_t           pinFunc;
   char              name[20];
-  bool              state;
 } pin_mgt_t;
-
-// constant pin defs used for 1) pin init and 2) copied into volatile status structure
-// to maintain state of inputs pins that get written 3) pin names (nice, right?) ;-)
-const pin_mgt_t     staticPins[] = {
-  {           OCP_SCAN_LD_N, INPUT,  "OCP_SCAN_LD_N", 0},
-  {         OCP_MAIN_PWR_EN, INPUT, "OCP_MAIN_PWR_EN", 0},
-  {        OCP_SCAN_DATA_IN, INPUT, "OCP_SCAN_DATA_IN", 0},
-  {            OCP_SCAN_CLK, INPUT, "OCP_SCAN_CLK", 0},
-  {           OCP_PRSNTB1_N, INPUT, "OCP_PRSNTB1_N", 0},
-  {             PCIE_PRES_N, INPUT, "PCIE_PRES_N", 0},
-  {              SCAN_VER_0, INPUT, "SCAN_VER_0", 0},
-  {       OCP_SCAN_DATA_OUT, OUTPUT, "OCP_SCAN_DATA_OUT", 0},
-  {          OCP_AUX_PWR_EN, OUTPUT, "OCP_AUX_PWR_EN", 0},
-  {            OCP_PWRBRK_N, OUTPUT, "OCP_PWRBRK_N", 0},
-  {              OCP_BIF0_N, INPUT, "OCP_BIF0_N", 0},
-  {           OCP_PRSNTB3_N, INPUT, "OCP_PRSNTB3_N", 0},
-  {              FAN_ON_AUX, INPUT,  "FAN_ON_AUX", 0},
-  {           OCP_SMB_RST_N, OUTPUT, "OCP_SMB_RST_N", 0},
-  {           OCP_PRSNTB0_N, OUTPUT, "OCP_PRSNTB0_N", 0},
-  {              OCP_BIF1_N, OUTPUT, "OCP_BIF1_N", 0},
-  {            OCP_SLOT_ID0, OUTPUT, "OCP_SLOT_ID0", 0},
-  {            OCP_SLOT_ID1, OUTPUT, "OCP_SLOT_ID1", 0},
-  {           OCP_PRSNTB2_N, OUTPUT, "OCP_PRSNTB2_N", 0},
-  {              SCAN_VER_1, INPUT, "SCAN_VER_1", 0},
-  {             PHY_RESET_N, OUTPUT, "PHY_RESET_N", 0},
-  {           RBT_ISOLATE_N, OUTPUT, "RBT_ISOLATE_N", 0},
-  {              OCP_BIF2_N, OUTPUT, "OCP_BIF2_N", 0},
-  {              OCP_WAKE_N, OUTPUT, "OCP_WAKE_N", 0},
-  {               TEMP_WARN, INPUT,  "TEMP_WARN", 0},
-  {               TEMP_CRIT, INPUT,  "TEMP_CRIT", 0},
-
-};
-
-#define STATIC_PIN_CNT        (sizeof(staticPins) / sizeof(pin_mgt_t))
 
 // CLI Command Table structure
 typedef struct {
@@ -148,9 +116,45 @@ typedef struct {
 
 // Constant Data
 const char      hello[] = "Dell Xavier NIC 3.0 Test Board V";
-const char      cliPrompt[] = "ltf> ";
+const char      cliPrompt[] = "cmd> ";
 const int       promptLen = sizeof(cliPrompt);
 const uint32_t  EEPROM_signature = 0xDE110C02;  // "DeLL Open Compute 02 (Xavier)"
+
+// constant pin defs used for 1) pin init and 2) copied into volatile status structure
+// to maintain state of inputs pins that get written 3) pin names (nice, right?) ;-)
+// NOTE: Any I/O that is connected to the DIP switches HAS to be an input because those
+// switches can be strapped to ground.  Thus, if the pin was an output and a 1 was
+// written, there would be a dead short on that pin (no resistors).
+const pin_mgt_t     staticPins[] = {
+  {           OCP_SCAN_LD_N, INPUT_PIN,   "OCP_SCAN_LD_N"},
+  {         OCP_MAIN_PWR_EN, INPUT_PIN,   "OCP_MAIN_PWR_EN"},
+  {        OCP_SCAN_DATA_IN, OUTPUT_PIN,  "OCP_SCAN_DATA_IN"},
+  {            OCP_SCAN_CLK, OUTPUT_PIN,  "OCP_SCAN_CLK"},
+  {           OCP_PRSNTB1_N, OUTPUT_PIN,  "OCP_PRSNTB1_N"},
+  {             PCIE_PRES_N, INPUT_PIN,   "PCIE_PRES_N"},
+  {              SCAN_VER_0, INPUT_PIN,   "SCAN_VER_0"},
+  {       OCP_SCAN_DATA_OUT, INPUT_PIN,   "OCP_SCAN_DATA_OUT"},
+  {          OCP_AUX_PWR_EN, INPUT_PIN,   "OCP_AUX_PWR_EN"},
+  {            OCP_PWRBRK_N, INPUT_PIN,   "OCP_PWRBRK_N"},
+  {              OCP_BIF0_N, INPUT_PIN,   "OCP_BIF0_N"},
+  {           OCP_PRSNTB3_N, OUTPUT_PIN,  "OCP_PRSNTB3_N"},
+  {              FAN_ON_AUX, INPUT_PIN,   "FAN_ON_AUX"},
+  {           OCP_SMB_RST_N, OUTPUT_PIN,  "OCP_SMB_RST_N"},
+  {           OCP_PRSNTB0_N, OUTPUT_PIN,  "OCP_PRSNTB0_N"},
+  {              OCP_BIF1_N, INPUT_PIN,   "OCP_BIF1_N"},
+  {            OCP_SLOT_ID0, INPUT_PIN,   "OCP_SLOT_ID0"},
+  {            OCP_SLOT_ID1, INPUT_PIN,   "OCP_SLOT_ID1"},
+  {           OCP_PRSNTB2_N, OUTPUT_PIN,  "OCP_PRSNTB2_N"},
+  {              SCAN_VER_1, INPUT_PIN,   "SCAN_VER_1"},
+  {             PHY_RESET_N, OUTPUT_PIN,  "PHY_RESET_N"},
+  {          RBT_ISOLATE_EN, OUTPUT_PIN,  "RBT_ISOLATE_EN"},
+  {              OCP_BIF2_N, INPUT_PIN,   "OCP_BIF2_N"},
+  {              OCP_WAKE_N, INPUT_PIN,   "OCP_WAKE_N"},
+  {               TEMP_WARN, INPUT_PIN,   "TEMP_WARN"},
+  {               TEMP_CRIT, INPUT_PIN,   "TEMP_CRIT"},
+};
+
+#define STATIC_PIN_CNT        (sizeof(staticPins) / sizeof(pin_mgt_t))
 
 // INA219 stuff (Un is chip ID on schematic)
 INA219::t_i2caddr   u2 = INA219::t_i2caddr(64);
@@ -159,17 +163,22 @@ INA219              u2Monitor(u2);
 INA219              u3Monitor(u3);
 
 // Variable data
-char            outBfr[OUTBFR_SIZE];
-pin_mgt_t       dynamicPins[STATIC_PIN_CNT];
+char                outBfr[OUTBFR_SIZE];
+uint8_t             pinStates[PINS_COUNT] = {0};
 
 // FLASH/EEPROM Data buffer
-EEPROM_data_t   EEPROMData;
+EEPROM_data_t       EEPROMData;
 
 // --------------------------------------------
 // Forward function prototypes
 // --------------------------------------------
 void EEPROM_Save(void);
 int waitAnyKey(void);
+void terminalOut(char *msg);
+
+// ANSI terminal escape sequence
+#define CLR_SCREEN()                terminalOut("\x1b[2J")
+#define CLR_LINE()                  terminalOut("\x1b[0K")
 
 // prototypes for CLI-called functions
 // template is func_name(int) because the int arg is the arg
@@ -184,6 +193,7 @@ int debug(int);
 int readCmd(int);
 int writeCmd(int);
 int pinCmd(int);
+int statusCmd(int);
 
 // CLI token stack
 char                *tokens[MAX_TOKENS];
@@ -198,9 +208,20 @@ const cli_entry     cmdTable[] = {
     {"read",    readCmd, 1, "Read input pin.", "read <pin_number> (Arduino numbering)"},
     {"write",  writeCmd, 2, "Write output pin.", "write <pin_number> <0|1> (Arduino numbering)"},
     {"pins",     pinCmd, 0, "Displays pin names and Arduino numbers", " "},
+    {"status",statusCmd, 0, "Displays pin states for all I/O pins", " "},
 };
 
 #define CLI_ENTRIES     (sizeof(cmdTable) / sizeof(cli_entry))
+
+void CURSOR(uint8_t r,uint8_t c)                 
+{
+    char          bfr[12];
+
+    sprintf(bfr, "\x1b[%d;%df", r, c);
+    SerialUSB.write(bfr);
+    SerialUSB.flush();
+    delay(5);
+}
 
 void terminalOut(char *msg)
 {
@@ -528,6 +549,12 @@ int writeCmd(int arg)
         return(1);
     }    
 
+    if ( staticPins[pinNo].pinFunc != OUTPUT_PIN )
+    {
+        terminalOut("Cannot write to a pin that is not an output!");
+        return(1);
+    }  
+
     if ( value == 0 || value == 1 )
       ;
     else
@@ -537,6 +564,7 @@ int writeCmd(int arg)
     }
 
     digitalWrite(pinNo, value);
+    pinStates[pinNo] = (bool) value;
     sprintf(outBfr, "Wrote %d to pin # %d (%s)", value, pinNo, getPinName(pinNo));
     terminalOut(outBfr);
 }
@@ -570,6 +598,128 @@ int help(int arg)
 
     return(0);
 }
+
+//===================================================================
+//                         Status Display Screen
+//===================================================================
+ char *padBuffer(int pos)
+ {
+    int         leftLen = strlen(outBfr);
+    int         padLen = pos - leftLen;
+    char        *s;
+
+    s = &outBfr[leftLen];
+    memset((void *) s, ' ', padLen);
+    s += padLen;
+    return(s);
+ }
+
+void displayLine(char *m)
+{
+    SerialUSB.write(m);
+    SerialUSB.flush();
+    delay(10);
+}
+
+int statusCmd(int arg)
+{
+    uint8_t           temp = 0;
+    char              rightBfr[42];
+    int               leftLen, padLen;
+    char              *s;
+    uint8_t           pinNo;
+
+    while ( 1 )
+    {
+      // read all input pins
+      // NOTE: Outputs are latched after the last write or are 0
+      for ( int i = 0; i < STATIC_PIN_CNT; i++ )
+      {
+          pinNo = staticPins[i].pinNo;
+          if ( staticPins[i].pinFunc == INPUT_PIN )
+          {
+              pinStates[pinNo] = digitalRead(pinNo);
+          }
+      }
+
+      // clear display
+      CLR_SCREEN();
+      CURSOR(1, 29);
+      displayLine("Xavier Status Display");
+
+      CURSOR(3,1);
+      sprintf(outBfr, "TEMP WARN       %d", pinStates[TEMP_WARN]);
+      displayLine(outBfr);
+
+      CURSOR(3,57);
+      sprintf(outBfr, "BIF [2:0]      %u%u%u", pinStates[OCP_BIF2_N], pinStates[OCP_BIF1_N], pinStates[OCP_BIF0_N]);
+      displayLine(outBfr);
+
+      CURSOR(4,1);
+      sprintf(outBfr, "TEMP CRIT       %u", pinStates[TEMP_CRIT]);
+      displayLine(outBfr);
+
+      CURSOR(4,54);
+      sprintf(outBfr, "PRSNTB [3:0]     %u%u%u%u", pinStates[OCP_PRSNTB3_N], pinStates[OCP_PRSNTB2_N], pinStates[OCP_PRSNTB1_N], pinStates[OCP_PRSNTB0_N]);
+      displayLine(outBfr);
+
+      CURSOR(5,1);
+      sprintf(outBfr, "FAN ON AUX      %u", pinStates[FAN_ON_AUX]);
+      displayLine(outBfr);
+
+      CURSOR(5,53);
+      sprintf(outBfr, "SLOT ID [1:0]       %u%u", pinStates[OCP_SLOT_ID1], pinStates[OCP_SLOT_ID0]);
+      displayLine(outBfr);
+
+      CURSOR(6,1);
+      sprintf(outBfr, "SCAN_LD_N       %d", pinStates[OCP_SCAN_LD_N]);
+      displayLine(outBfr);
+
+      CURSOR(6,52);
+      sprintf(outBfr, "SCAN VERS [1:0]      %u%u", pinStates[SCAN_VER_1], pinStates[SCAN_VER_0]);
+      displayLine(outBfr);
+
+      CURSOR(7,1);
+      sprintf(outBfr, "AUX_PWR_EN      %d", pinStates[OCP_AUX_PWR_EN]);
+      displayLine(outBfr);      
+
+      CURSOR(7,56);
+      sprintf(outBfr, "PCIE_PRES_N       %d", pinStates[PCIE_PRES_N]);
+      displayLine(outBfr);
+
+      CURSOR(8,1);
+      sprintf(outBfr, "MAIN_PWR_EN     %d", pinStates[OCP_MAIN_PWR_EN]);
+      displayLine(outBfr);  
+
+      CURSOR(8,58);
+      sprintf(outBfr, "OCP_WAKE_N      %d", pinStates[OCP_WAKE_N]);
+      displayLine(outBfr);
+
+      CURSOR(9,1);
+      sprintf(outBfr, "RBT_ISOLATE_EN  %d", pinStates[RBT_ISOLATE_EN]);
+      displayLine(outBfr);  
+
+      CURSOR(9,57);
+      sprintf(outBfr, "OCP_PWRBRK_N     %d", pinStates[OCP_PWRBRK_N]);
+      displayLine(outBfr);
+
+      // info line & check for any key pressed
+      CURSOR(24, 22);
+      displayLine("ESC to exit; ENTER for next page");
+
+      if ( SerialUSB.available()  )
+      {
+        (void) SerialUSB.read();
+        CLR_SCREEN();
+        return(0);
+      }
+
+      delay(3000);
+    }
+
+} // statusCmd()
+
+
 
 //===================================================================
 //                              SET Command
