@@ -37,7 +37,7 @@
 #define OCP_SCAN_LD_N         0   // PA22
 #define OCP_MAIN_PWR_EN       1   // PA23
 #define OCP_SCAN_DATA_IN      2   // PA10
-#define OCP_SCAN_CLK          3   // PA11
+//#define OCP_SCAN_CLK          3   // PA11 -- clock output is not accessible by CLI
 
 #define OCP_PRSNTB1_N         4   // PB10
 #define PCIE_PRES_N           5   // PB11
@@ -46,7 +46,7 @@
 
 #define OCP_SCAN_DATA_OUT     8   // PA08
 #define OCP_AUX_PWR_EN        9   // PA09
-#define UART_RX_UNUSED        10  // PA19
+#define NIC_PWR_GOOD          10  // PA19 ** NOTE ** P12/1 jumpered to P_UART1/3
 
 #define MCU_SDA               11  // PA16
 #define MCU_SCL               12  // PA17
@@ -125,16 +125,18 @@ const uint32_t  EEPROM_signature = 0xDE110C02;  // "DeLL Open Compute 02 (Xavier
 // NOTE: Any I/O that is connected to the DIP switches HAS to be an input because those
 // switches can be strapped to ground.  Thus, if the pin was an output and a 1 was
 // written, there would be a dead short on that pin (no resistors).
+// NOTE: The order of the entries in this table is the order they are displayed by the
+// 'pins' command. There is no other signficance to the order.
 const pin_mgt_t     staticPins[] = {
   {           OCP_SCAN_LD_N, INPUT_PIN,   "OCP_SCAN_LD_N"},
   {         OCP_MAIN_PWR_EN, INPUT_PIN,   "OCP_MAIN_PWR_EN"},
   {        OCP_SCAN_DATA_IN, OUTPUT_PIN,  "OCP_SCAN_DATA_IN"},
-  {            OCP_SCAN_CLK, OUTPUT_PIN,  "OCP_SCAN_CLK"},
   {           OCP_PRSNTB1_N, OUTPUT_PIN,  "OCP_PRSNTB1_N"},
   {             PCIE_PRES_N, INPUT_PIN,   "PCIE_PRES_N"},
   {              SCAN_VER_0, INPUT_PIN,   "SCAN_VER_0"},
   {       OCP_SCAN_DATA_OUT, INPUT_PIN,   "OCP_SCAN_DATA_OUT"},
   {          OCP_AUX_PWR_EN, INPUT_PIN,   "OCP_AUX_PWR_EN"},
+  {            NIC_PWR_GOOD, INPUT_PIN,   "jmp_NIC_PWR_GOOD"},  // jumpered see #define for details
   {            OCP_PWRBRK_N, INPUT_PIN,   "OCP_PWRBRK_N"},
   {              OCP_BIF0_N, INPUT_PIN,   "OCP_BIF0_N"},
   {           OCP_PRSNTB3_N, OUTPUT_PIN,  "OCP_PRSNTB3_N"},
@@ -194,25 +196,32 @@ int readCmd(int);
 int writeCmd(int);
 int pinCmd(int);
 int statusCmd(int);
+int eepromCmd(int);
 
 // CLI token stack
 char                *tokens[MAX_TOKENS];
 
 // CLI command table
-// format is "command", function, required arg count, "help line 1", "help line 2" (2nd line can be NULL)
+// format is "command", function, required arg count, "help line 1", "help line 2" 
 const cli_entry     cmdTable[] = {
-    {"debug",    debug, -1, "Debug functions mostly for developer use.", "'debug reset' resets board; 'debug dump' dumps EEPROM"},
-    {"help",       help, 0, "THIS DOES NOT DISPLAY ON PURPOSE", " "},
-    {"current",  curCmd, 0, "Read current for 12V and 3.3V rails.", " "},
-    {"set",      setCmd, 2, "Sets a stored parameter.", "set k 1.234 sets K constant."},
-    {"read",    readCmd, 1, "Read input pin.", "read <pin_number> (Arduino numbering)"},
-    {"write",  writeCmd, 2, "Write output pin.", "write <pin_number> <0|1> (Arduino numbering)"},
-    {"pins",     pinCmd, 0, "Displays pin names and Arduino numbers", " "},
-    {"status",statusCmd, 0, "Displays pin states for all I/O pins", " "},
+    {"debug",      debug,  -1, "Debug functions mostly for developer use.",      "Enter 'debug' with no arguments for help."},
+    {"help",        help,   0, "NOTE: THIS DOES NOT DISPLAY ON PURPOSE",         " "},
+    {"current",   curCmd,   0, "Read current for 12V and 3.3V rails.",           " "},
+//  {"set",       setCmd,   2, "Sets a parameter in EEPROM.",                    "set <param> <value>"},
+    {"read",     readCmd,   1, "Read input pin (Arduino numbering).",            "read <pin_number>"},
+    {"write",   writeCmd,   2, "Write output pin (Arduino numbering).",          "write <pin_number> <0|1>"},
+    {"pins",      pinCmd,   0, "Displays pin names and numbers.",                "Xavier uses Arduino-style pin numbering."},
+    {"status", statusCmd,   0, "Displays status of I/O pins etc.",               " "},
+    {"eeprom", eepromCmd,   0, "Displays contents of FRU EEPROM.",               "FRU EEPROM is on the inserted NIC 3.0 card."},
 };
 
 #define CLI_ENTRIES     (sizeof(cmdTable) / sizeof(cli_entry))
 
+// --------------------------------------------
+// CURSOR() - position cursor at (r,c) on ANSI
+// terminal.  Re-written from macro to flush
+// the stream and delay slightly.
+// --------------------------------------------
 void CURSOR(uint8_t r,uint8_t c)                 
 {
     char          bfr[12];
@@ -223,11 +232,26 @@ void CURSOR(uint8_t r,uint8_t c)
     delay(5);
 }
 
+// --------------------------------------------
+// terminalOut() - wrapper to Serial.println
+// that flushes the stream and delays slightly
+// --------------------------------------------
 void terminalOut(char *msg)
 {
     SerialUSB.println(msg);
     SerialUSB.flush();
     delay(50);
+}
+
+// --------------------------------------------
+// displayLine() - wrapper to Serial.write()
+// to flush the stream and delay slightly
+// --------------------------------------------
+void displayLine(char *m)
+{
+    SerialUSB.write(m);
+    SerialUSB.flush();
+    delay(10);
 }
 
 // --------------------------------------------
@@ -343,6 +367,9 @@ int pinCmd(int arg)
     int         count = STATIC_PIN_CNT;
     int         index = 0;
 
+    terminalOut(" #           Pin Name   I/O              #        Pin Name     I/O");
+    terminalOut("------------------------------------------------------------------");
+
     while ( count > 0 )
     {
       if ( count == 1 )
@@ -429,6 +456,13 @@ void debug_dump_eeprom(void)
 
 // --------------------------------------------
 // debug() - Main debug program
+//
+// arg = number of arguments, if any, not
+// including the debug command itself; args
+// are in ASCII and if intended to be numeric
+// have to be converted to int. tokens[n] is
+// the nth argument after 'debug' 
+// 
 // --------------------------------------------
 int debug(int arg)
 {
@@ -438,6 +472,10 @@ int debug(int arg)
         terminalOut("\tscan ... I2C bus scanner");
         terminalOut("\treset .. Reset board");
         terminalOut("\tdump ... Dump EEPROM");
+
+        // add new command help here
+        // NOTE: debug stuff is not part of CLI so
+        // the built-in CLI help doesn't apply
         return(0);
     }
 
@@ -447,8 +485,14 @@ int debug(int arg)
       debug_reset();
     else if ( strcmp(tokens[1], "dump") == 0 )
       debug_dump_eeprom();
+
+    // add new commands here
+
     else
+    {
       terminalOut("Invalid debug command");
+      return(1);
+    }
 
     return(0);
 }
@@ -456,21 +500,43 @@ int debug(int arg)
 //===================================================================
 //                          CURRENT Command
 //===================================================================
+
+// --------------------------------------------
+// get12VData() - get 12V rail V & I
+// --------------------------------------------
+void get12VData(float *v12I, float *v12V)
+{
+    *v12I = u2Monitor.shuntCurrent() * 1000.0;
+    *v12V = u2Monitor.busVoltage();
+}
+
+// --------------------------------------------
+// get 3P3VData() - get 3.3V rail V & I
+// --------------------------------------------
+void get3P3VData(float *v3p3I, float *v3p3V)
+{
+    *v3p3I = u3Monitor.shuntCurrent() * 1000.0;
+    *v3p3V = u3Monitor.busVoltage();    
+}
+
+// --------------------------------------------
+// curCmd() - display 12V and 3.3V V & I
+// --------------------------------------------
 int curCmd(int arg)
 {
-    float           tempF;
+    float           tempF, v12I, v12V, v3p3I, v3p3V;
 
     terminalOut("Acquiring current data, please wait...");
 
-    float v12I = u2Monitor.shuntCurrent() * 1000.0;
-    float v12V = u2Monitor.busVoltage();
-    float v12Power = u2Monitor.busPower() * 1000.0;
+    get12VData(&v12I, &v12V);
+    get3P3VData(&v3p3I, &v3p3V);
+
+//    float v12Power = u2Monitor.busPower() * 1000.0;
 
     delay(100);
 
-    float v3p3I = u3Monitor.shuntCurrent() * 1000.0;
-    float v3p3V = u3Monitor.busVoltage();
-    float v3p3Power = u3Monitor.busPower() * 1000.0;
+
+//    float v3p3Power = u3Monitor.busPower() * 1000.0;
 
     sprintf(outBfr, "12V shunt current:  %5.2f mA", v12I);
     terminalOut(outBfr);
@@ -504,6 +570,9 @@ int waitAnyKey(void)
     return(charIn);
 }
 
+// --------------------------------------------
+// getPinName() - get name of pin from pin #
+// --------------------------------------------
 const char *getPinName(int pinNo)
 {
     for ( int i = 0; i < STATIC_PIN_CNT; i++ )
@@ -515,10 +584,28 @@ const char *getPinName(int pinNo)
     return("Unknown");
 }
 
+// --------------------------------------------
+// getPinIndex() - get index into staticPins[]
+// based on Arduino pin #
+// --------------------------------------------
+int8_t getPinIndex(uint8_t pinNo)
+{
+    for ( int i = 0; i < STATIC_PIN_CNT; i++ )
+    {
+        if ( staticPins[i].pinNo == pinNo )
+            return(i);
+    }
+
+    return(-1);
+}
+
 //===================================================================
 //                    READ, WRITE COMMANDS
 //===================================================================
 
+// --------------------------------------------
+// readCmd() - read pin
+// --------------------------------------------
 int readCmd(int arg)
 {
     uint8_t       pin;
@@ -538,20 +625,24 @@ int readCmd(int arg)
     terminalOut(outBfr);
 }
 
+// --------------------------------------------
+// writeCmd() - write a pin with 0 or 1
+// --------------------------------------------
 int writeCmd(int arg)
 {
     uint8_t     pinNo = atoi(tokens[1]);
     uint8_t     value = atoi(tokens[2]);
+    uint8_t     index = getPinIndex(pinNo);
 
-    if ( pinNo > PINS_COUNT )
+    if ( pinNo > PINS_COUNT || index == -1 )
     {
-        terminalOut("Invalid pin number; please use Arduino numbering");
+        terminalOut("Invalid pin number; use 'pins' command for help.");
         return(1);
     }    
 
-    if ( staticPins[pinNo].pinFunc != OUTPUT_PIN )
+    if ( staticPins[index].pinFunc != OUTPUT_PIN )
     {
-        terminalOut("Cannot write to a pin that is not an output!");
+        terminalOut("Cannot write to an input pin! Use 'pins' command for help.");
         return(1);
     }  
 
@@ -559,7 +650,7 @@ int writeCmd(int arg)
       ;
     else
     {
-        terminalOut("Invalid pin value; please enter 0 or 1");
+        terminalOut("Invalid pin value; please enter either 0 or 1");
         return(1);
     }
 
@@ -580,6 +671,7 @@ int help(int arg)
     terminalOut("be separated from the command and other arguments by a space.");
     terminalOut("Up arrow repeats the last command; backspace or delete erases the last");
     terminalOut("character entered. Commands available are:");
+    terminalOut(" ");
 
     for ( int i = 0; i < (int) CLI_ENTRIES; i++ )
     {
@@ -602,6 +694,10 @@ int help(int arg)
 //===================================================================
 //                         Status Display Screen
 //===================================================================
+
+// --------------------------------------------
+// padBuffer() - pad a buffer with spaces
+// --------------------------------------------
  char *padBuffer(int pos)
  {
     int         leftLen = strlen(outBfr);
@@ -614,13 +710,9 @@ int help(int arg)
     return(s);
  }
 
-void displayLine(char *m)
-{
-    SerialUSB.write(m);
-    SerialUSB.flush();
-    delay(10);
-}
-
+// --------------------------------------------
+// statusCmd() - status display
+// --------------------------------------------
 int statusCmd(int arg)
 {
     uint8_t           temp = 0;
@@ -628,11 +720,17 @@ int statusCmd(int arg)
     int               leftLen, padLen;
     char              *s;
     uint8_t           pinNo;
+    float             v12I, v12V, v3p3I, v3p3V;
 
     while ( 1 )
     {
+      // get voltages and currents
+      get12VData(&v12I, &v12V);
+      get3P3VData(&v3p3I, &v3p3V);
+
       // read all input pins
       // NOTE: Outputs are latched after the last write or are 0
+      // from reset.
       for ( int i = 0; i < STATIC_PIN_CNT; i++ )
       {
           pinNo = staticPins[i].pinNo;
@@ -648,7 +746,7 @@ int statusCmd(int arg)
       displayLine("Xavier Status Display");
 
       CURSOR(3,1);
-      sprintf(outBfr, "TEMP WARN       %d", pinStates[TEMP_WARN]);
+      sprintf(outBfr, "TEMP WARN         %d", pinStates[TEMP_WARN]);
       displayLine(outBfr);
 
       CURSOR(3,57);
@@ -656,7 +754,7 @@ int statusCmd(int arg)
       displayLine(outBfr);
 
       CURSOR(4,1);
-      sprintf(outBfr, "TEMP CRIT       %u", pinStates[TEMP_CRIT]);
+      sprintf(outBfr, "TEMP CRIT         %u", pinStates[TEMP_CRIT]);
       displayLine(outBfr);
 
       CURSOR(4,54);
@@ -664,7 +762,7 @@ int statusCmd(int arg)
       displayLine(outBfr);
 
       CURSOR(5,1);
-      sprintf(outBfr, "FAN ON AUX      %u", pinStates[FAN_ON_AUX]);
+      sprintf(outBfr, "FAN ON AUX        %u", pinStates[FAN_ON_AUX]);
       displayLine(outBfr);
 
       CURSOR(5,53);
@@ -672,15 +770,15 @@ int statusCmd(int arg)
       displayLine(outBfr);
 
       CURSOR(6,1);
-      sprintf(outBfr, "SCAN_LD_N       %d", pinStates[OCP_SCAN_LD_N]);
+      sprintf(outBfr, "SCAN_LD_N         %d", pinStates[OCP_SCAN_LD_N]);
       displayLine(outBfr);
 
-      CURSOR(6,52);
-      sprintf(outBfr, "SCAN VERS [1:0]      %u%u", pinStates[SCAN_VER_1], pinStates[SCAN_VER_0]);
+      CURSOR(6,51);
+      sprintf(outBfr, "SCAN VERS [1:0]       %u%u", pinStates[SCAN_VER_1], pinStates[SCAN_VER_0]);
       displayLine(outBfr);
 
       CURSOR(7,1);
-      sprintf(outBfr, "AUX_PWR_EN      %d", pinStates[OCP_AUX_PWR_EN]);
+      sprintf(outBfr, "AUX_PWR_EN        %d", pinStates[OCP_AUX_PWR_EN]);
       displayLine(outBfr);      
 
       CURSOR(7,56);
@@ -688,7 +786,7 @@ int statusCmd(int arg)
       displayLine(outBfr);
 
       CURSOR(8,1);
-      sprintf(outBfr, "MAIN_PWR_EN     %d", pinStates[OCP_MAIN_PWR_EN]);
+      sprintf(outBfr, "MAIN_PWR_EN       %d", pinStates[OCP_MAIN_PWR_EN]);
       displayLine(outBfr);  
 
       CURSOR(8,58);
@@ -696,11 +794,23 @@ int statusCmd(int arg)
       displayLine(outBfr);
 
       CURSOR(9,1);
-      sprintf(outBfr, "RBT_ISOLATE_EN  %d", pinStates[RBT_ISOLATE_EN]);
+      sprintf(outBfr, "RBT_ISOLATE_EN    %d", pinStates[RBT_ISOLATE_EN]);
       displayLine(outBfr);  
 
       CURSOR(9,57);
       sprintf(outBfr, "OCP_PWRBRK_N     %d", pinStates[OCP_PWRBRK_N]);
+      displayLine(outBfr);
+
+      CURSOR(10,1);
+      sprintf(outBfr, "jmp_NIC_PWR_GOOD  %d", pinStates[NIC_PWR_GOOD]);
+      displayLine(outBfr);  
+
+      CURSOR(11,1);
+      sprintf(outBfr, "12V: %5.2f %5.2f  mA", v12V, v12I);
+      displayLine(outBfr);
+
+      CURSOR(11,55);
+      sprintf(outBfr, "3.3V: %5.2f %5.2f mA", v3p3V, v3p3I);
       displayLine(outBfr);
 
       // info line & check for any key pressed
@@ -807,9 +917,125 @@ int setCmd(int arg)
 //                      EEPROM/NVM Stuff
 //===================================================================
 
+#define EEPROM_ADR    0x52
+
+byte readEEPROM(long eeaddress)
+{
+  Wire.beginTransmission(EEPROM_ADR);
+
+  Wire.write((int)(eeaddress >> 8));      // MSB
+  Wire.write((int)(eeaddress & 0xFF));    // LSB
+  Wire.endTransmission();
+
+  Wire.requestFrom(EEPROM_ADR, 1);
+
+  byte rdata = 0xA5;
+  if (Wire.available()) 
+      rdata = Wire.read();
+  return rdata;
+}
+
+#define BOARD_AREA_LEN          64
+
+byte EEPROMBuffer[100];
+uint8_t           boardInfoArea[BOARD_AREA_LEN];
+
+void dumpMem(unsigned char *s, int len)
+{
+    char        lineBfr[100];
+    char        *t = lineBfr;
+    char        ascii[20];
+    char        *a = ascii;
+    int         lc = 0;
+    int         i = 0;
+
+    while ( i < len )
+    {
+        sprintf(t, "%02x ", *s);
+        t += 3;
+        i++;
+
+        if ( isprint(*s) )
+            *a = *s;
+        else
+            *a = '.';
+
+        s++;
+        a++;
+
+        // 16 bytes per line + ascii representation
+        if ( ++lc == 16 )
+        {
+            *t = 0;
+            *a = 0;
+            sprintf(outBfr, "%s | %s |", lineBfr, ascii);
+            terminalOut(outBfr);
+
+            lc = 0;
+            t = outBfr;
+            a = ascii;
+        }
+    }
+
+    *t = 0;
+    *a = 0;
+
+    if ( lineBfr[0] != 0 )
+    {
+        sprintf(outBfr, "%s | %s |", lineBfr, ascii);
+        terminalOut(outBfr);
+    }
+
+} // dumpMem()
+
+int eepromCmd(int arg)
+{
+    uint16_t          eepromAddr = 0;
+    uint16_t          boardInfoOffset, productInfoOffset;
+
+    sprintf(outBfr, "Reading FRU EEPROM at 0x%02x...", EEPROM_ADR);
+    terminalOut(outBfr);
+
+    // read common header
+    while ( eepromAddr++ < 8 )
+    {
+        EEPROMBuffer[eepromAddr] = readEEPROM(eepromAddr);
+    }
+
+    sprintf(outBfr, "Format version %d", EEPROMBuffer[0]);
+    terminalOut(outBfr);
+
+    boardInfoOffset = EEPROMBuffer[3] * 8;
+    productInfoOffset = EEPROMBuffer[4] * 8;
+
+    sprintf(outBfr, "Board area offset: %d Data:", boardInfoOffset);
+    terminalOut(outBfr);
+
+    eepromAddr = boardInfoOffset;
+    while ( eepromAddr++ < BOARD_AREA_LEN )
+    {
+        EEPROMBuffer[eepromAddr] = readEEPROM(eepromAddr);
+    }
+
+    dumpMem(EEPROMBuffer, BOARD_AREA_LEN);
+
+    sprintf(outBfr, "Product info offset: %d Data:", productInfoOffset);
+    terminalOut(outBfr);
+
+    eepromAddr = productInfoOffset;
+    while ( eepromAddr++ < BOARD_AREA_LEN )
+    {
+        EEPROMBuffer[eepromAddr] = readEEPROM(eepromAddr);
+    }
+
+    dumpMem(EEPROMBuffer, BOARD_AREA_LEN);
+
+}
+
+
 // --------------------------------------------
 // EEPROM_Save() - write EEPROM structure to
-// the EEPROM
+// the simulated EEPROM
 // --------------------------------------------
 void EEPROM_Save(void)
 {
@@ -825,7 +1051,8 @@ void EEPROM_Save(void)
 }
 
 // --------------------------------------------
-// EEPROM_Read() - Read struct from EEPROM
+// EEPROM_Read() - Read struct from simulated
+// EEPROM
 // --------------------------------------------
 void EEPROM_Read(void)
 {
@@ -850,6 +1077,7 @@ void EEPROM_Defaults(void)
 // EEPROM_InitLocal() - Initialize EEPROM & Data
 //
 // Returns false if no error, else true
+// NOTE: For simulated EEPROM, not FRU EEPROM
 // --------------------------------------------
 bool EEPROM_InitLocal(void)
 {
