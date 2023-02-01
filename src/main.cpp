@@ -917,8 +917,19 @@ int setCmd(int arg)
 //                      EEPROM/NVM Stuff
 //===================================================================
 
-#define EEPROM_ADR    0x52
+#define EEPROM_ADR        0x52
+#define MAX_I2C_WRITE     16        // safe size, could be larger?
+#define BOARD_AREA_LEN    128       // one spec says 64?
 
+// temporary read buffer for FRU EEPROM
+byte              EEPROMBuffer[100];
+
+// buffer for FRU EEPROM board info area
+uint8_t           boardInfoArea[BOARD_AREA_LEN];
+
+// --------------------------------------------
+// readEEPROM() - read a byte from FRU EEPROM
+// --------------------------------------------
 byte readEEPROM(long eeaddress)
 {
   Wire.beginTransmission(EEPROM_ADR);
@@ -935,11 +946,28 @@ byte readEEPROM(long eeaddress)
   return rdata;
 }
 
-#define BOARD_AREA_LEN          64
+// --------------------------------------------
+// writeEEPROMPage() - write a 'page' to the
+// FRU EEPROM. NOTE: Not in use, here in case.
+// --------------------------------------------
+void writeEEPROMPage(long eeAddress, byte *buffer)
+{
 
-byte EEPROMBuffer[100];
-uint8_t           boardInfoArea[BOARD_AREA_LEN];
+  Wire.beginTransmission(EEPROM_ADR);
 
+  Wire.write((int)(eeAddress >> 8));        // MSB
+  Wire.write((int)(eeAddress & 0xFF));      // LSB
+
+  // Write bytes to EEPROM
+  for (byte x = 0 ; x < MAX_I2C_WRITE ; x++)
+    Wire.write(buffer[x]);                //Write the data
+
+  Wire.endTransmission();                 //Send stop condition
+}
+
+// --------------------------------------------
+// dumpMem() - debug utility to dump memory
+// --------------------------------------------
 void dumpMem(unsigned char *s, int len)
 {
     char        lineBfr[100];
@@ -988,47 +1016,82 @@ void dumpMem(unsigned char *s, int len)
 
 } // dumpMem()
 
+// Table 8-1 COMMON HEADER
+typedef struct {
+  uint8_t         format_vers;
+  uint8_t         internal_area_offset;
+  uint8_t         chassis_area_offset;
+  uint8_t         board_area_offset;
+  uint8_t         product_area_offset;
+  uint8_t         multirecord_area_offset;
+  uint8_t         pad;
+  uint8_t         cksum;
+} common_hdr_t;
+
+typedef struct {
+  uint8_t         format_vers;
+  uint8_t         board_area_length;
+  uint8_t         language;
+  uint8_t         mfg_time[3];           // mins since 0:00 1/1/1996 little endian
+} board_hdr_t;
+
+typedef struct {
+  uint16_t        board_area_offset_actual;
+  uint16_t        board_area_length;
+  uint16_t        product_area_offset_actual;
+  uint16_t        internal_area_offset_actual;
+  uint16_t        chassis_area_offset_actual;
+  uint16_t        multirecord_area_offset_actual;
+} eeprom_desc_t;
+
+common_hdr_t      commonHeader;
+board_hdr_t       boardHeader;
+eeprom_desc_t     EEPROMDescriptor;
+
+// --------------------------------------------
+// eepromCmd() - 'eeprom' command
+// --------------------------------------------
 int eepromCmd(int arg)
 {
-    uint16_t          eepromAddr = 0;
-    uint16_t          boardInfoOffset, productInfoOffset;
+    uint16_t          eepromAddr = 0, index;
+    byte              *p;
 
-    sprintf(outBfr, "Reading FRU EEPROM at 0x%02x...", EEPROM_ADR);
+    sprintf(outBfr, "Reading FRU EEPROM common header from 0x%02x...", EEPROM_ADR);
     terminalOut(outBfr);
 
     // read common header
-    while ( eepromAddr++ < 8 )
+    p = (byte *) &commonHeader;
+    while ( eepromAddr < sizeof(common_hdr_t) )
     {
-        EEPROMBuffer[eepromAddr] = readEEPROM(eepromAddr);
+        *p++ = readEEPROM(eepromAddr++);
     }
 
-    sprintf(outBfr, "Format version %d", EEPROMBuffer[0]);
+    dumpMem((unsigned char *) &commonHeader, sizeof(common_hdr_t));
+
+    sprintf(outBfr, "Format version %d", boardHeader.format_vers & 0xF);
     terminalOut(outBfr);
 
-    boardInfoOffset = EEPROMBuffer[3] * 8;
-    productInfoOffset = EEPROMBuffer[4] * 8;
+    // all area offsets in common area are x8 bytes
+    EEPROMDescriptor.internal_area_offset_actual = commonHeader.internal_area_offset * 8;
+    EEPROMDescriptor.chassis_area_offset_actual = commonHeader.chassis_area_offset * 8;
+    EEPROMDescriptor.board_area_offset_actual = commonHeader.board_area_offset * 8;
+    EEPROMDescriptor.product_area_offset_actual = commonHeader.product_area_offset * 8;
+    EEPROMDescriptor.multirecord_area_offset_actual = commonHeader.multirecord_area_offset * 8;
 
-    sprintf(outBfr, "Board area offset: %d Data:", boardInfoOffset);
+    sprintf(outBfr, "Board area offset: %d Data:", EEPROMDescriptor.board_area_offset_actual);
     terminalOut(outBfr);
 
-    eepromAddr = boardInfoOffset;
-    while ( eepromAddr++ < BOARD_AREA_LEN )
+    // read board info area 
+    // header info first, to determine length
+    eepromAddr = EEPROMDescriptor.board_area_offset_actual;
+    p = (byte *) &boardHeader;
+    while ( eepromAddr < sizeof(board_hdr_t) )
     {
-        EEPROMBuffer[eepromAddr] = readEEPROM(eepromAddr);
+        *p++ = readEEPROM(eepromAddr++);
     }
 
-    dumpMem(EEPROMBuffer, BOARD_AREA_LEN);
-
-    sprintf(outBfr, "Product info offset: %d Data:", productInfoOffset);
-    terminalOut(outBfr);
-
-    eepromAddr = productInfoOffset;
-    while ( eepromAddr++ < BOARD_AREA_LEN )
-    {
-        EEPROMBuffer[eepromAddr] = readEEPROM(eepromAddr);
-    }
-
-    dumpMem(EEPROMBuffer, BOARD_AREA_LEN);
+    EEPROMDescriptor.board_area_length = boardHeader.board_area_length * 8;
+    dumpMem((unsigned char *) &boardHeader, 7);
 
 }
 
@@ -1117,7 +1180,10 @@ void setup()
   bool        LEDstate = false;
   pin_size_t  pinNo;
 
-  // configure all I/O pins
+  // NOTE: The INA219 driver starts Wire so we don't have to
+  // although it is unclear what the speed is when it does it
+  //  Wire.begin();
+  //  Wire.setClock(400000);
 
   // configure heartbeat LED pin and turn on which indicates that the
   // board is being initialized
@@ -1134,7 +1200,7 @@ void setup()
       if ( staticPins[i].pinFunc == OUTPUT )
       {
           // see xavier/variants.cpp for the data in g_APinDescription[]
-          // source 7mA, sink 10mA
+          // this will source 7mA, sink 10mA
           PORT->Group[g_APinDescription[pinNo].ulPort].PINCFG[g_APinDescription[pinNo].ulPin].bit.DRVSTR = 1;
       }
   }
@@ -1142,7 +1208,9 @@ void setup()
   // start serial over USB and wait for a connection
   // NOTE: Baud rate isn't applicable to USB but...
   // NOTE: Many libraries won't init unless Serial
-  // is running (or in this case SerialUSB)
+  // is running (or in this case SerialUSB). In the
+  // variants.h file Serial is supposed to be
+  // redirected to SerialUSB but that isn't working
   SerialUSB.begin(115200);
   while ( !SerialUSB )
   {
@@ -1152,9 +1220,11 @@ void setup()
       delay(FAST_BLINK_DELAY);
   }
 
-  // initialize system & libraries
+  // init simulated EEPROM
   EEPROM_InitLocal();
 
+  // init INA219's (and Wire)
+  // NOTE: 'u2' is the chip ID on the schematic
   u2Monitor.begin();
   u2Monitor.configure(INA219::RANGE_16V, INA219::GAIN_8_320MV, INA219::ADC_16SAMP, INA219::ADC_16SAMP, INA219::CONT_SH_BUS);
   u2Monitor.calibrate(SHUNT_R, U2_SHUNT_MAX_V, U2_BUS_MAX_V, U2_MAX_CURRENT);
@@ -1185,7 +1255,7 @@ void loop()
   int             byteIn;
   static char     inBfr[80];
   static int      inCharCount = 0;
-  static char     lastCmd[80] = {0};
+  static char     lastCmd[80] = "help";
   const char      bs[4] = {0x1b, '[', '1', 'D'};  // terminal: backspace seq
   static bool     LEDstate = false;
   static uint32_t time = millis();
