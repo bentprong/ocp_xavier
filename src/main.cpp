@@ -12,7 +12,7 @@
 
 // disable EEPROM/FLASH library driver debug, because it uses Serial 
 // not SerialUSB and may hang on startup as a result
-#define FLASH_DEBUG               1
+//#define FLASH_DEBUG               1
 
 // possible CLI errors
 #define CLI_ERR_NO_ERROR          0
@@ -119,6 +119,7 @@ const char      hello[] = "Dell Xavier NIC 3.0 Test Board V";
 const char      cliPrompt[] = "cmd> ";
 const int       promptLen = sizeof(cliPrompt);
 const uint32_t  EEPROM_signature = 0xDE110C02;  // "DeLL Open Compute 02 (Xavier)"
+const uint8_t   eepromAddresses[4] = {0, 0x52, 0, 0x56};      // NOTE: these DO NOT match Table 67
 
 // constant pin defs used for 1) pin init and 2) copied into volatile status structure
 // to maintain state of inputs pins that get written 3) pin names (nice, right?) ;-)
@@ -181,6 +182,7 @@ void terminalOut(char *msg);
 // ANSI terminal escape sequence
 #define CLR_SCREEN()                terminalOut("\x1b[2J")
 #define CLR_LINE()                  terminalOut("\x1b[0K")
+#define SHOW()                      terminalOut(outBfr)
 
 // prototypes for CLI-called functions
 // template is func_name(int) because the int arg is the arg
@@ -403,6 +405,7 @@ void debug_scan(void)
   byte        count = 0;
   int         scanCount = 0;
   uint32_t    startTime = millis();
+  char        *s;
 
   terminalOut ("Scanning I2C bus...");
 
@@ -412,7 +415,25 @@ void debug_scan(void)
     Wire.beginTransmission(i);
     if (Wire.endTransmission() == 0)
     {
-      sprintf(outBfr, "Found device at address %d 0x%2X", i, i);
+      if ( i == 0x40 )
+        s = "U2 INA219";
+      else if ( i == 0x41 )
+        s = "U3 INA219";
+      else
+      {
+        s = "Unknown device";
+        for ( int j = 0; j < 4; j++ )
+        {
+
+            if ( eepromAddresses[j] == i )
+            {
+                s = "FRU EEPROM";
+                break;
+            }
+        }
+      }
+
+      sprintf(outBfr, "Found device at address %d 0x%2X %s ", i, i, s);
       terminalOut(outBfr);
       count++;
       delay(10);  
@@ -917,43 +938,46 @@ int setCmd(int arg)
 //                      EEPROM/NVM Stuff
 //===================================================================
 
-#define EEPROM_ADR        0x52
 #define MAX_I2C_WRITE     16        // safe size, could be larger?
-#define BOARD_AREA_LEN    128       // one spec says 64?
+#define EEPROM_MAX_LEN    128
 
 // temporary read buffer for FRU EEPROM
-byte              EEPROMBuffer[100];
-
-// buffer for FRU EEPROM board info area
-uint8_t           boardInfoArea[BOARD_AREA_LEN];
+byte              EEPROMBuffer[EEPROM_MAX_LEN];
 
 // --------------------------------------------
-// readEEPROM() - read a byte from FRU EEPROM
+// readEEPROM() - read from FRU EEPROM into
+// EEPROMBuffer up to max length
 // --------------------------------------------
-byte readEEPROM(long eeaddress)
+void readEEPROM(uint8_t i2cAddr, uint32_t eeaddress, byte *dest, uint16_t length)
 {
-  Wire.beginTransmission(EEPROM_ADR);
+  uint16_t          index = 0;
+
+  if ( length > EEPROM_MAX_LEN )
+    length = EEPROM_MAX_LEN;
+
+  Wire.beginTransmission(i2cAddr);
 
   Wire.write((int)(eeaddress >> 8));      // MSB
   Wire.write((int)(eeaddress & 0xFF));    // LSB
   Wire.endTransmission();
 
-  Wire.requestFrom(EEPROM_ADR, 1);
+  Wire.requestFrom(i2cAddr, length);
 
-  byte rdata = 0xA5;
-  if (Wire.available()) 
-      rdata = Wire.read();
-  return rdata;
+  while ( Wire.available() && length-- > 0 ) 
+  {
+      *dest++  = Wire.read();
+  }
 }
 
 // --------------------------------------------
 // writeEEPROMPage() - write a 'page' to the
 // FRU EEPROM. NOTE: Not in use, here in case.
+// NOTE: Not tested! Should work, hahah.
 // --------------------------------------------
-void writeEEPROMPage(long eeAddress, byte *buffer)
+void writeEEPROMPage(uint8_t i2cAddr, long eeAddress, byte *buffer)
 {
 
-  Wire.beginTransmission(EEPROM_ADR);
+  Wire.beginTransmission(i2cAddr);
 
   Wire.write((int)(eeAddress >> 8));        // MSB
   Wire.write((int)(eeAddress & 0xFF));      // LSB
@@ -1000,7 +1024,7 @@ void dumpMem(unsigned char *s, int len)
             terminalOut(outBfr);
 
             lc = 0;
-            t = outBfr;
+            t = lineBfr;
             a = ascii;
         }
     }
@@ -1033,6 +1057,7 @@ typedef struct {
   uint8_t         board_area_length;
   uint8_t         language;
   uint8_t         mfg_time[3];           // mins since 0:00 1/1/1996 little endian
+  uint8_t         manuf_type_length;
 } board_hdr_t;
 
 typedef struct {
@@ -1044,9 +1069,30 @@ typedef struct {
   uint16_t        multirecord_area_offset_actual;
 } eeprom_desc_t;
 
+#define TYPE_LENGTH_MASK        0x3F
+#define GET_TYPE(x)             (x >> 6)
+
 common_hdr_t      commonHeader;
 board_hdr_t       boardHeader;
 eeprom_desc_t     EEPROMDescriptor;
+const char        sixBitASCII[64] = " !\"$%&'()*+,-./123456789:;<=>?ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_";
+
+void unpack6bitASCII(char *s, uint8_t *bytes)
+{
+    uint8_t         temp;
+    
+    temp = bytes[0] & 0x3F;
+    *s++ = sixBitASCII[temp];
+
+    temp = bytes[1] << 2 | (bytes[0] >> 6);
+    *s++ = sixBitASCII[temp];
+
+    temp = bytes[1] >> 4 | bytes[2] & 3;
+    *s++ = sixBitASCII[temp];
+
+    *s = sixBitASCII[bytes[2] >> 2];
+
+}
 
 // --------------------------------------------
 // eepromCmd() - 'eeprom' command
@@ -1054,22 +1100,35 @@ eeprom_desc_t     EEPROMDescriptor;
 int eepromCmd(int arg)
 {
     uint16_t          eepromAddr = 0, index;
-    byte              *p;
+    uint8_t           eepromI2CAddr = 0x52;
+    char              tempStr[256];
+    uint8_t           field_type, field_length, field_offset;
+    uint8_t           slot;
+    
+    // read the slot ID, which determines the FRU EEPROM I2C address
+    // NOTE: Default is for slot 1...
+    slot = digitalRead(OCP_SLOT_ID1) << 1 | digitalRead(OCP_SLOT_ID0);
+    if ( slot >= 0 && slot <= 3 )
+      eepromI2CAddr = eepromAddresses[slot];
 
-    sprintf(outBfr, "Reading FRU EEPROM common header from 0x%02x...", EEPROM_ADR);
-    terminalOut(outBfr);
+    // the first byte in the EEPROM should be a 1 which is the format version
+    readEEPROM(eepromI2CAddr, 0, EEPROMBuffer, 1);
+    if ( EEPROMBuffer[0] != 1 )
+    {
+        sprintf(outBfr, "Unable to locate FRU EEPROM");
+        return(0);
+    }
+
+    sprintf(outBfr, "FRU EEPROM found at SMB address 0x%02x", eepromI2CAddr);
+    SHOW();
 
     // read common header
-    p = (byte *) &commonHeader;
-    while ( eepromAddr < sizeof(common_hdr_t) )
-    {
-        *p++ = readEEPROM(eepromAddr++);
-    }
+    readEEPROM(eepromI2CAddr, eepromAddr, (byte *) &commonHeader, sizeof(common_hdr_t));
 
     dumpMem((unsigned char *) &commonHeader, sizeof(common_hdr_t));
 
-    sprintf(outBfr, "Format version %d", boardHeader.format_vers & 0xF);
-    terminalOut(outBfr);
+    sprintf(outBfr, "Format version %d", commonHeader.format_vers & 0xF);
+    SHOW();
 
     // all area offsets in common area are x8 bytes
     EEPROMDescriptor.internal_area_offset_actual = commonHeader.internal_area_offset * 8;
@@ -1078,23 +1137,74 @@ int eepromCmd(int arg)
     EEPROMDescriptor.product_area_offset_actual = commonHeader.product_area_offset * 8;
     EEPROMDescriptor.multirecord_area_offset_actual = commonHeader.multirecord_area_offset * 8;
 
-    sprintf(outBfr, "Board area offset: %d Data:", EEPROMDescriptor.board_area_offset_actual);
-    terminalOut(outBfr);
-
-    // read board info area 
-    // header info first, to determine length
+    // read first 7 bytes of board info area "header" to determine length
     eepromAddr = EEPROMDescriptor.board_area_offset_actual;
-    p = (byte *) &boardHeader;
-    while ( eepromAddr < sizeof(board_hdr_t) )
+    readEEPROM(eepromI2CAddr, eepromAddr, (byte *) &boardHeader, sizeof(board_hdr_t));
+    EEPROMDescriptor.board_area_length = boardHeader.board_area_length * 8;
+
+    sprintf(outBfr, "Language Code: %02X", boardHeader.language);
+    SHOW();
+
+    sprintf(outBfr, "Mfg Date/Time: %02X%02X%02X", boardHeader.mfg_time[0], boardHeader.mfg_time[1], boardHeader.mfg_time[2]);
+    SHOW();
+
+    // read the entire board area
+    // NOTE eepromAddr is already set at the next byte to read in the EEPROM
+    // after the "header" which is a fixed size; thereafter, variable length fields
+    readEEPROM(eepromI2CAddr, eepromAddr, (byte *) &EEPROMBuffer, EEPROMDescriptor.board_area_length);
+
+    // extract manufacturer name
+    field_offset = sizeof(board_hdr_t);
+    field_type = GET_TYPE(boardHeader.manuf_type_length);
+    field_length = (boardHeader.manuf_type_length & TYPE_LENGTH_MASK);
+
+    if ( field_type == 3 )
     {
-        *p++ = readEEPROM(eepromAddr++);
+        strncpy(tempStr, (char *) &EEPROMBuffer[field_offset], field_length);
+        tempStr[field_length] = 0;
+    }
+    else
+    {
+        unpack6bitASCII(tempStr, &EEPROMBuffer[field_offset]);
     }
 
-    EEPROMDescriptor.board_area_length = boardHeader.board_area_length * 8;
-    dumpMem((unsigned char *) &boardHeader, 7);
+    sprintf(outBfr, "Manufacturer:  %s", tempStr);
+    SHOW();
+
+    // extract the next field: product name
+    field_offset += field_length;
+    field_type = EEPROMBuffer[field_offset++];
+    field_length = field_type & TYPE_LENGTH_MASK;
+    field_type = GET_TYPE(field_type);
+
+    strncpy(tempStr, (char *) &EEPROMBuffer[field_offset], field_length);
+    tempStr[field_length] = 0;
+    sprintf(outBfr, "Product Name:  %s", tempStr);
+    SHOW();
+
+    // extract the next field: serial number
+    field_offset += field_length;
+    field_type = EEPROMBuffer[field_offset++];
+    field_length = field_type & TYPE_LENGTH_MASK;
+    field_type = GET_TYPE(field_type);;
+
+    strncpy(tempStr, (char *) &EEPROMBuffer[field_offset], field_length);
+    tempStr[field_length] = 0;
+    sprintf(outBfr, "Serial Number: %s", tempStr);
+    SHOW();
+
+    // extract the next field: part #
+    field_offset += field_length;
+    field_type = EEPROMBuffer[field_offset++];
+    field_length = field_type & TYPE_LENGTH_MASK;
+    field_type = GET_TYPE(field_type);
+
+    strncpy(tempStr, (char *) &EEPROMBuffer[field_offset], field_length);
+    tempStr[field_length] = 0;
+    sprintf(outBfr, "Part Number:   %s", tempStr);
+    SHOW();
 
 }
-
 
 // --------------------------------------------
 // EEPROM_Save() - write EEPROM structure to
