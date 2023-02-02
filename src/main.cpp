@@ -1080,7 +1080,7 @@ const char        sixBitASCII[64] = " !\"$%&'()*+,-./123456789:;<=>?ABCDEFGHIJKL
 void unpack6bitASCII(char *s, uint8_t *bytes)
 {
     uint8_t         temp;
-    
+
     temp = bytes[0] & 0x3F;
     *s++ = sixBitASCII[temp];
 
@@ -1104,7 +1104,8 @@ int eepromCmd(int arg)
     char              tempStr[256];
     uint8_t           field_type, field_length, field_offset;
     uint8_t           slot;
-    
+    char              *s;
+
     // read the slot ID, which determines the FRU EEPROM I2C address
     // NOTE: Default is for slot 1...
     slot = digitalRead(OCP_SLOT_ID1) << 1 | digitalRead(OCP_SLOT_ID0);
@@ -1165,7 +1166,14 @@ int eepromCmd(int arg)
     }
     else
     {
-        unpack6bitASCII(tempStr, &EEPROMBuffer[field_offset]);
+        s = tempStr;
+        while ( field_length )
+        {
+          unpack6bitASCII(s, &EEPROMBuffer[field_offset]);
+          field_offset += 3;
+          field_length -= 4;
+          s += 4;
+        }
     }
 
     sprintf(outBfr, "Manufacturer:  %s", tempStr);
