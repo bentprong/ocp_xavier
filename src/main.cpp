@@ -1071,27 +1071,66 @@ typedef struct {
 
 #define TYPE_LENGTH_MASK        0x3F
 #define GET_TYPE(x)             (x >> 6)
+#define GET_LENGTH(x)           (x & TYPE_LENGTH_MASK)
 
 common_hdr_t      commonHeader;
 board_hdr_t       boardHeader;
 eeprom_desc_t     EEPROMDescriptor;
 const char        sixBitASCII[64] = " !\"$%&'()*+,-./123456789:;<=>?ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_";
 
-void unpack6bitASCII(char *s, uint8_t *bytes)
+void unpack6bitASCII(char *s, uint8_t field_length, uint8_t *bytes)
 {
     uint8_t         temp;
+    uint16_t        field_offset = 0;
 
-    temp = bytes[0] & 0x3F;
-    *s++ = sixBitASCII[temp];
+    while ( field_length > 0 )
+    {
+        temp = bytes[field_offset] & 0x3F;
+        *s++ = sixBitASCII[temp];
 
-    temp = bytes[1] << 2 | (bytes[0] >> 6);
-    *s++ = sixBitASCII[temp];
+        temp = bytes[field_offset + 1] << 2 | (bytes[field_offset] >> 6);
+        *s++ = sixBitASCII[temp];
 
-    temp = bytes[1] >> 4 | bytes[2] & 3;
-    *s++ = sixBitASCII[temp];
+        temp = bytes[field_offset + 1] >> 4 | bytes[field_offset + 2] & 3;
+        *s++ = sixBitASCII[temp];
 
-    *s = sixBitASCII[bytes[2] >> 2];
+        *s++ = sixBitASCII[bytes[field_offset + 2] >> 2];
 
+        field_length -= 3;
+        field_offset += 3;
+    }
+
+    *s = 0;
+}
+
+uint16_t extractField(char *t, uint8_t type_length, uint16_t field_offset)
+{
+    uint8_t field_type = GET_TYPE(type_length);
+    uint16_t field_length = GET_LENGTH(type_length);
+
+    if ( field_type == 3 )
+    {
+        // 8-bit ASCII
+        strncpy(t, (char *) &EEPROMBuffer[field_offset], field_length);
+        t[field_length] = 0;
+    }
+    else if ( field_type == 2 )
+    {
+        // 6-bit ASCII
+        unpack6bitASCII(t, field_length, &EEPROMBuffer[field_offset]);
+    }
+    else if ( field_type == 1 )
+    {
+        // BCD plus
+        strcpy(t, "BCD plus cannot be parsed");
+    }
+    else
+    {
+        // binary or unspecified
+        strcpy(t, "binary or unspecified format");
+    }
+
+    return(field_offset + field_length);
 }
 
 // --------------------------------------------
@@ -1102,7 +1141,8 @@ int eepromCmd(int arg)
     uint16_t          eepromAddr = 0, index;
     uint8_t           eepromI2CAddr = 0x52;
     char              tempStr[256];
-    uint8_t           field_type, field_length, field_offset;
+    uint8_t           field_type;
+    uint16_t          field_offset, field_length;
     uint8_t           slot;
     char              *s;
 
@@ -1125,9 +1165,9 @@ int eepromCmd(int arg)
 
     // read common header
     readEEPROM(eepromI2CAddr, eepromAddr, (byte *) &commonHeader, sizeof(common_hdr_t));
+//    dumpMem((unsigned char *) &commonHeader, sizeof(common_hdr_t));
 
-    dumpMem((unsigned char *) &commonHeader, sizeof(common_hdr_t));
-
+    terminalOut("COMMON HEADER DATA");
     sprintf(outBfr, "Format version %d", commonHeader.format_vers & 0xF);
     SHOW();
 
@@ -1138,77 +1178,62 @@ int eepromCmd(int arg)
     EEPROMDescriptor.product_area_offset_actual = commonHeader.product_area_offset * 8;
     EEPROMDescriptor.multirecord_area_offset_actual = commonHeader.multirecord_area_offset * 8;
 
+    sprintf(outBfr, "Int Use Area:  %d",  EEPROMDescriptor.internal_area_offset_actual);
+    SHOW();
+
+    sprintf(outBfr, "Chassis Area:  %d", EEPROMDescriptor.chassis_area_offset_actual);
+    SHOW();
+
+    sprintf(outBfr, "Board Area:    %d", EEPROMDescriptor.board_area_offset_actual);
+    SHOW();
+
+    sprintf(outBfr, "Product Area:  %d", EEPROMDescriptor.product_area_offset_actual);
+    SHOW();
+
+    sprintf(outBfr, "MRecord Area:  %d", EEPROMDescriptor.multirecord_area_offset_actual);
+    SHOW();
+
     // read first 7 bytes of board info area "header" to determine length
     eepromAddr = EEPROMDescriptor.board_area_offset_actual;
     readEEPROM(eepromI2CAddr, eepromAddr, (byte *) &boardHeader, sizeof(board_hdr_t));
+//    dumpMem(EEPROMBuffer, sizeof(board_hdr_t));
+
     EEPROMDescriptor.board_area_length = boardHeader.board_area_length * 8;
 
+    terminalOut("BOARD AREA DATA");
     sprintf(outBfr, "Language Code: %02X", boardHeader.language);
     SHOW();
 
     sprintf(outBfr, "Mfg Date/Time: %02X%02X%02X", boardHeader.mfg_time[0], boardHeader.mfg_time[1], boardHeader.mfg_time[2]);
     SHOW();
 
+    sprintf(outBfr, "Board Length:  %d", EEPROMDescriptor.board_area_length);
+    SHOW();
+    
     // read the entire board area
-    // NOTE eepromAddr is already set at the next byte to read in the EEPROM
-    // after the "header" which is a fixed size; thereafter, variable length fields
+    eepromAddr += sizeof(board_hdr_t);
     readEEPROM(eepromI2CAddr, eepromAddr, (byte *) &EEPROMBuffer, EEPROMDescriptor.board_area_length);
+//    dumpMem((unsigned char *) EEPROMBuffer, EEPROMDescriptor.board_area_length);
+
+    field_offset = 0;
 
     // extract manufacturer name
-    field_offset = sizeof(board_hdr_t);
-    field_type = GET_TYPE(boardHeader.manuf_type_length);
-    field_length = (boardHeader.manuf_type_length & TYPE_LENGTH_MASK);
-
-    if ( field_type == 3 )
-    {
-        strncpy(tempStr, (char *) &EEPROMBuffer[field_offset], field_length);
-        tempStr[field_length] = 0;
-    }
-    else
-    {
-        s = tempStr;
-        while ( field_length )
-        {
-          unpack6bitASCII(s, &EEPROMBuffer[field_offset]);
-          field_offset += 3;
-          field_length -= 4;
-          s += 4;
-        }
-    }
-
+    field_offset = extractField(tempStr, boardHeader.manuf_type_length, field_offset);
     sprintf(outBfr, "Manufacturer:  %s", tempStr);
     SHOW();
 
     // extract the next field: product name
-    field_offset += field_length;
-    field_type = EEPROMBuffer[field_offset++];
-    field_length = field_type & TYPE_LENGTH_MASK;
-    field_type = GET_TYPE(field_type);
-
-    strncpy(tempStr, (char *) &EEPROMBuffer[field_offset], field_length);
-    tempStr[field_length] = 0;
+    field_offset = extractField(tempStr, EEPROMBuffer[field_offset], ++field_offset);
     sprintf(outBfr, "Product Name:  %s", tempStr);
     SHOW();
 
     // extract the next field: serial number
-    field_offset += field_length;
-    field_type = EEPROMBuffer[field_offset++];
-    field_length = field_type & TYPE_LENGTH_MASK;
-    field_type = GET_TYPE(field_type);;
-
-    strncpy(tempStr, (char *) &EEPROMBuffer[field_offset], field_length);
-    tempStr[field_length] = 0;
+    field_offset = extractField(tempStr, EEPROMBuffer[field_offset], ++field_offset);
     sprintf(outBfr, "Serial Number: %s", tempStr);
     SHOW();
 
     // extract the next field: part #
-    field_offset += field_length;
-    field_type = EEPROMBuffer[field_offset++];
-    field_length = field_type & TYPE_LENGTH_MASK;
-    field_type = GET_TYPE(field_type);
-
-    strncpy(tempStr, (char *) &EEPROMBuffer[field_offset], field_length);
-    tempStr[field_length] = 0;
+    field_offset = extractField(tempStr, EEPROMBuffer[field_offset], ++field_offset);
     sprintf(outBfr, "Part Number:   %s", tempStr);
     SHOW();
 
