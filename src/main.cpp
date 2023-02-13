@@ -3,6 +3,7 @@
 #include "float.h"
 #include "FlashAsEEPROM_SAMD.h"
 #include "INA219.h"
+#include "time.h"
 
 #define FAST_BLINK_DELAY            200
 #define SLOW_BLINK_DELAY            1000
@@ -87,7 +88,7 @@
 #define IN_OUT_PIN            4             // reserved future when DIP switches won't short
 
 // Version
-const char      versString[] = "1.0.0";
+const char      versString[] = "1.0.1";
 
 // Pin Management structure
 typedef struct {
@@ -118,8 +119,9 @@ typedef struct {
 const char      hello[] = "Dell Xavier NIC 3.0 Test Board V";
 const char      cliPrompt[] = "cmd> ";
 const int       promptLen = sizeof(cliPrompt);
-const uint32_t  EEPROM_signature = 0xDE110C02;  // "DeLL Open Compute 02 (Xavier)"
-const uint8_t   eepromAddresses[4] = {0, 0x52, 0, 0x56};      // NOTE: these DO NOT match Table 67
+const uint32_t  EEPROM_signature = 0xDE110C02;              // the hex means "DEll Open Compute 02 (Xavier)"
+const uint8_t   eepromAddresses[4] = {0, 0x52, 0, 0x56};    // NOTE: these DO NOT match Table 67
+const uint32_t  jan1996 = 820454400;                        // epoch time (secs) of 1/1/1996 00:00
 
 // constant pin defs used for 1) pin init and 2) copied into volatile status structure
 // to maintain state of inputs pins that get written 3) pin names (nice, right?) ;-)
@@ -214,7 +216,7 @@ const cli_entry     cmdTable[] = {
     {"write",   writeCmd,   2, "Write output pin (Arduino numbering).",          "write <pin_number> <0|1>"},
     {"pins",      pinCmd,   0, "Displays pin names and numbers.",                "Xavier uses Arduino-style pin numbering."},
     {"status", statusCmd,   0, "Displays status of I/O pins etc.",               " "},
-    {"eeprom", eepromCmd,   0, "Displays contents of FRU EEPROM.",               "FRU EEPROM is on the inserted NIC 3.0 card."},
+    {"eeprom", eepromCmd,  -1, "Displays FRU EEPROM info areas if no args.",     "'eeprom <addr> <length>' dumps <length> bytes @ <addr>"},
 };
 
 #define CLI_ENTRIES     (sizeof(cmdTable) / sizeof(cli_entry))
@@ -836,7 +838,7 @@ int statusCmd(int arg)
 
       // info line & check for any key pressed
       CURSOR(24, 22);
-      displayLine("ESC to exit; ENTER for next page");
+      displayLine("Hit any key to exit this display");
 
       if ( SerialUSB.available()  )
       {
@@ -939,7 +941,7 @@ int setCmd(int arg)
 //===================================================================
 
 #define MAX_I2C_WRITE     16        // safe size, could be larger?
-#define EEPROM_MAX_LEN    128
+#define EEPROM_MAX_LEN    256
 
 // temporary read buffer for FRU EEPROM
 byte              EEPROMBuffer[EEPROM_MAX_LEN];
@@ -1057,8 +1059,14 @@ typedef struct {
   uint8_t         board_area_length;
   uint8_t         language;
   uint8_t         mfg_time[3];           // mins since 0:00 1/1/1996 little endian
-  uint8_t         manuf_type_length;
 } board_hdr_t;
+
+typedef struct {
+    uint8_t     format_vers;
+    uint8_t     prod_area_length;
+    uint8_t     language;
+    uint8_t     manuf_type_length;
+} prod_hdr_t;
 
 typedef struct {
   uint16_t        board_area_offset_actual;
@@ -1075,6 +1083,7 @@ typedef struct {
 
 common_hdr_t      commonHeader;
 board_hdr_t       boardHeader;
+prod_hdr_t        prodHeader;
 eeprom_desc_t     EEPROMDescriptor;
 const char        sixBitASCII[64] = " !\"$%&'()*+,-./123456789:;<=>?ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_";
 
@@ -1103,10 +1112,13 @@ void unpack6bitASCII(char *s, uint8_t field_length, uint8_t *bytes)
     *s = 0;
 }
 
-uint16_t extractField(char *t, uint8_t type_length, uint16_t field_offset)
+uint16_t extractField(char *t, uint16_t field_offset)
 {
-    uint8_t field_type = GET_TYPE(type_length);
-    uint16_t field_length = GET_LENGTH(type_length);
+    uint8_t             field_type = GET_TYPE(EEPROMBuffer[field_offset]);
+    uint16_t            field_length = GET_LENGTH(EEPROMBuffer[field_offset]);
+    uint8_t             temp;
+
+    field_offset++;
 
     if ( field_type == 3 )
     {
@@ -1121,15 +1133,46 @@ uint16_t extractField(char *t, uint8_t type_length, uint16_t field_offset)
     }
     else if ( field_type == 1 )
     {
-        // BCD plus
-        strcpy(t, "BCD plus cannot be parsed");
+        // BCD plus per 13.1 in platform mgt spec
+        while ( field_length-- > 0 )
+        {
+            temp = EEPROMBuffer[field_offset] >> 4;
+            if ( temp >= 0 && temp <= 9 )
+                *t++ = temp | '0';
+            else if ( temp == 0xA )
+                *t++ = ' ';
+            else if ( temp == 0xB )
+                *t++ = '-';
+            else if ( temp == 0xC )
+                *t++ = '.';
+            else
+                *t++ = '?';
+            temp = EEPROMBuffer[field_offset] & 0xF;
+            if ( temp >= 0 && temp <= 9 )
+                *t++ = temp | '0';
+            else if ( temp == 0xA )
+                *t++ = ' ';
+            else if ( temp == 0xB )
+                *t++ = '-';
+            else if ( temp == 0xC )
+                *t++ = '.';
+            else
+                *t++ = '?';
+
+            field_offset++;
+        }
     }
     else
     {
         // binary or unspecified
-        strcpy(t, "binary or unspecified format");
+        strcpy(t, "Binary or unspecified format");
+        while ( field_length-- > 0 )
+        {
+            sprintf(t++, "%02X", EEPROMBuffer[field_offset++]);
+        }
     }
 
+    // adjust field offset for caller past field just processed
     return(field_offset + field_length);
 }
 
@@ -1145,12 +1188,25 @@ int eepromCmd(int arg)
     uint16_t          field_offset, field_length;
     uint8_t           slot;
     char              *s;
+    uint32_t          deltaTime;
+    time_t            t;
 
     // read the slot ID, which determines the FRU EEPROM I2C address
     // NOTE: Default is for slot 1...
     slot = digitalRead(OCP_SLOT_ID1) << 1 | digitalRead(OCP_SLOT_ID0);
     if ( slot >= 0 && slot <= 3 )
       eepromI2CAddr = eepromAddresses[slot];
+
+    if ( arg == 2 )
+    {
+        // 'eeprom <offset> <length>' command dumps FRU EEPROM at offset for length bytes
+        uint16_t        length = atoi(tokens[2]);
+        uint16_t        offset = atoi(tokens[1]);
+
+        readEEPROM(eepromI2CAddr, offset, EEPROMBuffer, length);
+        dumpMem(EEPROMBuffer, length);
+        return(0);
+    }
 
     // the first byte in the EEPROM should be a 1 which is the format version
     readEEPROM(eepromI2CAddr, 0, EEPROMBuffer, 1);
@@ -1167,8 +1223,8 @@ int eepromCmd(int arg)
     readEEPROM(eepromI2CAddr, eepromAddr, (byte *) &commonHeader, sizeof(common_hdr_t));
 //    dumpMem((unsigned char *) &commonHeader, sizeof(common_hdr_t));
 
-    terminalOut("COMMON HEADER DATA");
-    sprintf(outBfr, "Format version %d", commonHeader.format_vers & 0xF);
+    terminalOut("--- COMMON HEADER DATA");
+    sprintf(outBfr, "Format version:  %d", commonHeader.format_vers & 0xF);
     SHOW();
 
     // all area offsets in common area are x8 bytes
@@ -1178,19 +1234,19 @@ int eepromCmd(int arg)
     EEPROMDescriptor.product_area_offset_actual = commonHeader.product_area_offset * 8;
     EEPROMDescriptor.multirecord_area_offset_actual = commonHeader.multirecord_area_offset * 8;
 
-    sprintf(outBfr, "Int Use Area:  %d",  EEPROMDescriptor.internal_area_offset_actual);
+    sprintf(outBfr, "Int Use Area:    %d",  EEPROMDescriptor.internal_area_offset_actual);
     SHOW();
 
-    sprintf(outBfr, "Chassis Area:  %d", EEPROMDescriptor.chassis_area_offset_actual);
+    sprintf(outBfr, "Chassis Area:    %d", EEPROMDescriptor.chassis_area_offset_actual);
     SHOW();
 
-    sprintf(outBfr, "Board Area:    %d", EEPROMDescriptor.board_area_offset_actual);
+    sprintf(outBfr, "Board Area:      %d", EEPROMDescriptor.board_area_offset_actual);
     SHOW();
 
-    sprintf(outBfr, "Product Area:  %d", EEPROMDescriptor.product_area_offset_actual);
+    sprintf(outBfr, "Product Area:    %d", EEPROMDescriptor.product_area_offset_actual);
     SHOW();
 
-    sprintf(outBfr, "MRecord Area:  %d", EEPROMDescriptor.multirecord_area_offset_actual);
+    sprintf(outBfr, "MRecord Area:    %d", EEPROMDescriptor.multirecord_area_offset_actual);
     SHOW();
 
     // read first 7 bytes of board info area "header" to determine length
@@ -1200,16 +1256,23 @@ int eepromCmd(int arg)
 
     EEPROMDescriptor.board_area_length = boardHeader.board_area_length * 8;
 
-    terminalOut("BOARD AREA DATA");
-    sprintf(outBfr, "Language Code: %02X", boardHeader.language);
+    terminalOut("--- BOARD AREA DATA");
+    sprintf(outBfr, "Language Code:   %02X", boardHeader.language);
     SHOW();
 
-    sprintf(outBfr, "Mfg Date/Time: %02X%02X%02X", boardHeader.mfg_time[0], boardHeader.mfg_time[1], boardHeader.mfg_time[2]);
+    // format manufacturing date/time
+    deltaTime = boardHeader.mfg_time[2] << 16 | boardHeader.mfg_time[1] << 8 | boardHeader.mfg_time[0];
+    deltaTime *= 60;            // time in EEPROM is in minutes, convert to seconds
+    deltaTime += jan1996;       // convert to epoch since 1/1/1970
+    t = deltaTime;
+    strcpy(tempStr, asctime(gmtime(&t)));
+    tempStr[strcspn(tempStr, "\n")] = 0;
+    sprintf(outBfr, "Mfg Date/Time:   %s", tempStr);
     SHOW();
 
-    sprintf(outBfr, "Board Length:  %d", EEPROMDescriptor.board_area_length);
+    sprintf(outBfr, "Bd Area Length:  %d", EEPROMDescriptor.board_area_length);
     SHOW();
-    
+
     // read the entire board area
     eepromAddr += sizeof(board_hdr_t);
     readEEPROM(eepromI2CAddr, eepromAddr, (byte *) &EEPROMBuffer, EEPROMDescriptor.board_area_length);
@@ -1217,26 +1280,58 @@ int eepromCmd(int arg)
 
     field_offset = 0;
 
-    // extract manufacturer name
-    field_offset = extractField(tempStr, boardHeader.manuf_type_length, field_offset);
-    sprintf(outBfr, "Manufacturer:  %s", tempStr);
+    // extract manufacturer name; type/lenth is last item in board header
+    field_offset = extractField(tempStr, field_offset);
+    sprintf(outBfr, "Manufacturer:    %s", tempStr);
     SHOW();
 
     // extract the next field: product name
-    field_offset = extractField(tempStr, EEPROMBuffer[field_offset], ++field_offset);
-    sprintf(outBfr, "Product Name:  %s", tempStr);
+    field_offset = extractField(tempStr, field_offset);
+    sprintf(outBfr, "Product Name:    %s", tempStr);
     SHOW();
 
     // extract the next field: serial number
-    field_offset = extractField(tempStr, EEPROMBuffer[field_offset], ++field_offset);
-    sprintf(outBfr, "Serial Number: %s", tempStr);
+    field_offset = extractField(tempStr, field_offset);
+    sprintf(outBfr, "Serial Number:   %s", tempStr);
     SHOW();
 
     // extract the next field: part #
-    field_offset = extractField(tempStr, EEPROMBuffer[field_offset], ++field_offset);
-    sprintf(outBfr, "Part Number:   %s", tempStr);
+    field_offset = extractField(tempStr, field_offset);
+    sprintf(outBfr, "Part Number:     %s", tempStr);
     SHOW();
 
+    // FRU File ID
+    field_offset = extractField(tempStr, field_offset);
+    sprintf(outBfr, "FRU File ID:     %s", tempStr);
+    SHOW();
+
+    // NOTE: Custom product info area fields are NOT processed
+    // nor is the check for the 0xC1 terminator checked
+
+#if 0
+// 2/13/23 R Lewis - defer this because the product areas appear similar to the board areas
+    // read the product area header
+    eepromAddr = EEPROMDescriptor.product_area_offset_actual;
+    readEEPROM(eepromI2CAddr, eepromAddr, (uint8_t *) &prodHeader, sizeof(prod_hdr_t));
+    eepromAddr += sizeof(prod_hdr_t);
+    dumpMem((uint8_t *) &prodHeader, sizeof(prod_hdr_t));
+
+    terminalOut("--- PRODUCT AREA DATA");
+    sprintf(outBfr, "Format version %d", prodHeader.format_vers & 0xF);
+    SHOW();
+
+    sprintf(outBfr, "Language Code: %02X", prodHeader.language);
+    SHOW();
+
+    uint16_t        length = prodHeader.prod_area_length * 8;
+    sprintf(outBfr, "Prod Area Size:%d", length);
+    SHOW();
+
+    readEEPROM(eepromI2CAddr, eepromAddr, EEPROMBuffer, length);
+    dumpMem(EEPROMBuffer, length);
+#endif // 0
+
+    return(0);
 }
 
 // --------------------------------------------
