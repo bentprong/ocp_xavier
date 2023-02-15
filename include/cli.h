@@ -1,0 +1,35 @@
+#ifndef _CLI_H_
+#define _CLI_H_
+
+#include <Arduino.h>
+#include "main.h"
+
+#define CMD_NAME_MAX                12
+#define MAX_LINE_SZ                 80
+
+// CLI Command Table structure
+typedef struct {
+    char        cmd[CMD_NAME_MAX];
+    int         (*func) (int x);
+    int         argCount;
+    char        help1[MAX_LINE_SZ];
+    char        help2[MAX_LINE_SZ];
+
+} cli_entry;
+
+// possible CLI errors
+#define CLI_ERR_NO_ERROR          0
+#define CLI_ERR_CMD_NOT_FOUND     1
+#define CLI_ERR_TOO_FEW_ARGS      2
+#define CLI_ERR_TOO_MANY_ARGS     3
+#define MAX_TOKENS                8
+
+void CURSOR(uint8_t r,uint8_t c);
+void terminalOut(char *msg);
+void displayLine(char *m);
+void doPrompt(void);
+int waitAnyKey(void);
+bool cli(char *raw);
+int help(int);
+
+#endif // _CLI_H_
