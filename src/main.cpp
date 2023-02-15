@@ -1,11 +1,12 @@
 #include <Arduino.h>
 #include "main.h"
+#include "cli.h"
 
 #define FAST_BLINK_DELAY            200
 #define SLOW_BLINK_DELAY            1000
 
-// Version
-const char      versString[] = "1.0.1";
+bool cli(char *raw);
+void doHello(void);
 
 // constant pin defs used for 1) pin init and 2) copied into volatile status structure
 // to maintain state of inputs pins that get written 3) pin names (nice, right?) ;-)
@@ -44,11 +45,6 @@ const char      versString[] = "1.0.1";
 };
 
 uint16_t      static_pin_count = sizeof(staticPins) / sizeof(pin_mgt_t);
-
-// Variable data
-static char         outBfr[OUTBFR_SIZE];
-
-const char      hello[] = "Dell Xavier NIC 3.0 Test Board V";
 
 //===================================================================
 //                      setup() - Initialization
@@ -104,8 +100,7 @@ void setup()
   // init INA219's (and Wire)
   monitorsInit();
 
-  sprintf(outBfr, "%s %s", hello, versString);
-  terminalOut(outBfr);
+  doHello();
   doPrompt();
 
 } // setup()
@@ -154,7 +149,7 @@ void loop()
           // carriage return - EOL 
           // save as the last cmd (for up arrow) and call CLI with
           // the completed line less CR/LF
-          terminalOut(" ");
+          terminalOut((char *) " ");
           inBfr[inCharCount] = 0;
           inCharCount = 0;
           strcpy(lastCmd, inBfr);

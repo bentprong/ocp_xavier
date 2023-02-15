@@ -91,7 +91,7 @@ void unpack6bitASCII(char *s, uint8_t field_length, uint8_t *bytes)
         temp = bytes[field_offset + 1] << 2 | (bytes[field_offset] >> 6);
         *s++ = sixBitASCII[temp];
 
-        temp = bytes[field_offset + 1] >> 4 | bytes[field_offset + 2] & 3;
+        temp = (bytes[field_offset + 1] >> 4) | (bytes[field_offset + 2] & 3);
         *s++ = sixBitASCII[temp];
 
         *s++ = sixBitASCII[bytes[field_offset + 2] >> 2];
@@ -214,7 +214,7 @@ int eepromCmd(int arg)
     readEEPROM(eepromI2CAddr, eepromAddr, (byte *) &commonHeader, sizeof(common_hdr_t));
 //    dumpMem((unsigned char *) &commonHeader, sizeof(common_hdr_t));
 
-    terminalOut("--- COMMON HEADER DATA");
+    terminalOut((char *) "--- COMMON HEADER DATA");
     sprintf(outBfr, "Format version:  %d", commonHeader.format_vers & 0xF);
     SHOW();
 
@@ -247,7 +247,7 @@ int eepromCmd(int arg)
 
     EEPROMDescriptor.board_area_length = boardHeader.board_area_length * 8;
 
-    terminalOut("--- BOARD AREA DATA");
+    terminalOut((char *) "--- BOARD AREA DATA");
     sprintf(outBfr, "Language Code:   %02X", boardHeader.language);
     SHOW();
 
@@ -390,11 +390,11 @@ bool EEPROM_InitLocal(void)
       EEPROM_Save();
 
       rc = true;
-      terminalOut("EEPROM validation FAILED, EEPROM initialized OK");
+      terminalOut((char *) "EEPROM validation FAILED, EEPROM initialized OK");
     }
     else
     {
-      terminalOut("EEPROM validated OK");
+      terminalOut((char *) "EEPROM validated OK");
     }
 
     return(rc);

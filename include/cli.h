@@ -28,8 +28,9 @@ void CURSOR(uint8_t r,uint8_t c);
 void terminalOut(char *msg);
 void displayLine(char *m);
 void doPrompt(void);
+void doHello(void);
 int waitAnyKey(void);
-bool cli(char *raw);
+
 int help(int);
 
 #endif // _CLI_H_

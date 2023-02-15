@@ -10,13 +10,13 @@
 #include "float.h"
 #include "time.h"
 
+#define VERSION               "1.0.2"
+
 // alises to support pin_mgt_t pinFunc - because Arduino doesn't
 // "like" writing to an input pin
 #define INPUT_PIN             INPUT
 #define OUTPUT_PIN            OUTPUT
 #define IN_OUT_PIN            4             // reserved future when DIP switches won't short
-
-
 
 #define OUTBFR_SIZE                 (MAX_LINE_SZ * 3)
 

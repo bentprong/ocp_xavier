@@ -4,12 +4,22 @@
 #include "commands.h"
 
 // Constant Data
-
 const char      cliPrompt[] = "cmd> ";
 const int       promptLen = sizeof(cliPrompt);
+const char      hello[] = "Dell Xavier NIC 3.0 Test Board V";
 
 // CLI token stack
-char                *tokens[MAX_TOKENS];
+char            *tokens[MAX_TOKENS];
+char            outBfr[OUTBFR_SIZE];
+
+// command functions
+int curCmd(int);
+int writeCmd(int arg);
+int readCmd(int arg);
+int setCmd(int arg);
+int pinCmd(int arg);
+int debug(int arg);
+int statusCmd(int arg);
 
 // CLI command table
 // format is "command", function, required arg count, "help line 1", "help line 2" 
@@ -76,6 +86,12 @@ void doPrompt(void)
     SerialUSB.flush();
 }
 
+void doHello(void)
+{
+    sprintf(outBfr, "%s %s", hello, VERSION);
+    terminalOut(outBfr);
+}
+
 // --------------------------------------------
 // waitAnyKey() - wait for any key pressed
 //
@@ -129,7 +145,7 @@ bool cli(char *raw)
 
     if ( tokNdx >= MAX_TOKENS )
     {
-        terminalOut("Too many arguments in command line!");
+        terminalOut((char *) "Too many arguments in command line!");
         doPrompt();
         return(false);
     }
@@ -167,13 +183,13 @@ bool cli(char *raw)
     if ( rc == false )
     {
         if ( error == CLI_ERR_CMD_NOT_FOUND )
-         terminalOut("Invalid command");
+         terminalOut((char *) "Invalid command");
         else if ( error == CLI_ERR_TOO_FEW_ARGS )
-          terminalOut("Not enough arguments for this command, check help.");
+          terminalOut((char *) "Not enough arguments for this command, check help.");
         else if ( error == CLI_ERR_TOO_MANY_ARGS )
-          terminalOut("Too many arguments for this command, check help.");
+          terminalOut((char *) "Too many arguments for this command, check help.");
         else
-          terminalOut("Unknown parser s/w error");
+          terminalOut((char *) "Unknown parser s/w error");
     }
 
     doPrompt();
@@ -186,13 +202,12 @@ bool cli(char *raw)
 //===================================================================
 int help(int arg)
 {
-    sprintf(outBfr, "%s %s", hello, versString);
-    terminalOut(outBfr);
-    terminalOut("Enter a command then press ENTER. Some commands require arguments, which must");
-    terminalOut("be separated from the command and other arguments by a space.");
-    terminalOut("Up arrow repeats the last command; backspace or delete erases the last");
-    terminalOut("character entered. Commands available are:");
-    terminalOut(" ");
+    doHello();
+    terminalOut((char *) "Enter a command then press ENTER. Some commands require arguments, which must");
+    terminalOut((char *) "be separated from the command and other arguments by a space.");
+    terminalOut((char *) "Up arrow repeats the last command; backspace or delete erases the last");
+    terminalOut((char *) "character entered. Commands available are:");
+    terminalOut((char *) " ");
 
     for ( int i = 0; i < (int) CLI_ENTRIES; i++ )
     {
