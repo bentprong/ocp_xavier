@@ -1,50 +1,14 @@
 #include <Arduino.h>
-#include "main.h"
-#include "cli.h"
+#include "main.hpp"
+#include "commands.hpp"
+#include "eeprom.hpp"
+#include "cli.hpp"
 
 #define FAST_BLINK_DELAY            200
 #define SLOW_BLINK_DELAY            1000
 
-bool cli(char *raw);
-void doHello(void);
 
-// constant pin defs used for 1) pin init and 2) copied into volatile status structure
-// to maintain state of inputs pins that get written 3) pin names (nice, right?) ;-)
-// NOTE: Any I/O that is connected to the DIP switches HAS to be an input because those
-// switches can be strapped to ground.  Thus, if the pin was an output and a 1 was
-// written, there would be a dead short on that pin (no resistors).
-// NOTE: The order of the entries in this table is the order they are displayed by the
-// 'pins' command. There is no other signficance to the order.
- pin_mgt_t     staticPins[] = {
-  {           OCP_SCAN_LD_N, INPUT_PIN,   "OCP_SCAN_LD_N"},
-  {         OCP_MAIN_PWR_EN, INPUT_PIN,   "OCP_MAIN_PWR_EN"},
-  {        OCP_SCAN_DATA_IN, OUTPUT_PIN,  "OCP_SCAN_DATA_IN"},
-  {           OCP_PRSNTB1_N, OUTPUT_PIN,  "OCP_PRSNTB1_N"},
-  {             PCIE_PRES_N, INPUT_PIN,   "PCIE_PRES_N"},
-  {              SCAN_VER_0, INPUT_PIN,   "SCAN_VER_0"},
-  {       OCP_SCAN_DATA_OUT, INPUT_PIN,   "OCP_SCAN_DATA_OUT"},
-  {          OCP_AUX_PWR_EN, INPUT_PIN,   "OCP_AUX_PWR_EN"},
-  {            NIC_PWR_GOOD, INPUT_PIN,   "jmp_NIC_PWR_GOOD"},  // jumpered see #define for details
-  {            OCP_PWRBRK_N, INPUT_PIN,   "OCP_PWRBRK_N"},
-  {              OCP_BIF0_N, INPUT_PIN,   "OCP_BIF0_N"},
-  {           OCP_PRSNTB3_N, OUTPUT_PIN,  "OCP_PRSNTB3_N"},
-  {              FAN_ON_AUX, INPUT_PIN,   "FAN_ON_AUX"},
-  {           OCP_SMB_RST_N, OUTPUT_PIN,  "OCP_SMB_RST_N"},
-  {           OCP_PRSNTB0_N, OUTPUT_PIN,  "OCP_PRSNTB0_N"},
-  {              OCP_BIF1_N, INPUT_PIN,   "OCP_BIF1_N"},
-  {            OCP_SLOT_ID0, INPUT_PIN,   "OCP_SLOT_ID0"},
-  {            OCP_SLOT_ID1, INPUT_PIN,   "OCP_SLOT_ID1"},
-  {           OCP_PRSNTB2_N, OUTPUT_PIN,  "OCP_PRSNTB2_N"},
-  {              SCAN_VER_1, INPUT_PIN,   "SCAN_VER_1"},
-  {             PHY_RESET_N, OUTPUT_PIN,  "PHY_RESET_N"},
-  {          RBT_ISOLATE_EN, OUTPUT_PIN,  "RBT_ISOLATE_EN"},
-  {              OCP_BIF2_N, INPUT_PIN,   "OCP_BIF2_N"},
-  {              OCP_WAKE_N, INPUT_PIN,   "OCP_WAKE_N"},
-  {               TEMP_WARN, INPUT_PIN,   "TEMP_WARN"},
-  {               TEMP_CRIT, INPUT_PIN,   "TEMP_CRIT"},
-};
 
-uint16_t      static_pin_count = sizeof(staticPins) / sizeof(pin_mgt_t);
 
 //===================================================================
 //                      setup() - Initialization
@@ -52,7 +16,7 @@ uint16_t      static_pin_count = sizeof(staticPins) / sizeof(pin_mgt_t);
 void setup() 
 {
   bool        LEDstate = false;
-  pin_size_t  pinNo;
+
 
   // NOTE: The INA219 driver starts Wire so we don't have to
   // although it is unclear what the speed is when it does it
@@ -65,22 +29,10 @@ void setup()
   digitalWrite(PIN_LED, LEDstate);
 
   // configure I/O pins
-  for ( int i = 0; i < static_pin_count; i++ )
-  {
-      pinNo = staticPins[i].pinNo;
-      pinMode(pinNo, staticPins[i].pinFunc);
-
-      // increase drive strength on output pins
-      if ( staticPins[i].pinFunc == OUTPUT )
-      {
-          // see xavier/variants.cpp for the data in g_APinDescription[]
-          // this will source 7mA, sink 10mA
-          PORT->Group[g_APinDescription[pinNo].ulPort].PINCFG[g_APinDescription[pinNo].ulPin].bit.DRVSTR = 1;
-      }
-  }
+  configureIOPins();
   
   // start serial over USB and wait for a connection
-  // NOTE: Baud rate isn't applicable to USB but...
+  // NOTE: Baud rate isn't applicable to USB...
   // NOTE: Many libraries won't init unless Serial
   // is running (or in this case SerialUSB). In the
   // variants.h file Serial is supposed to be

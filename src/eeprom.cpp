@@ -1,8 +1,10 @@
 #include <Arduino.h>
-#include "main.h"
+#include "main.hpp"
 #include <Wire.h>
 #include "FlashAsEEPROM_SAMD.h"
 #include <time.h>
+#include "eeprom.hpp"
+#include "cli.hpp"
 
 extern const uint16_t       static_pin_count;
 extern char             *tokens[];
@@ -29,10 +31,8 @@ byte              EEPROMBuffer[EEPROM_MAX_LEN];
 // readEEPROM() - read from FRU EEPROM into
 // EEPROMBuffer up to max length
 // --------------------------------------------
-void readEEPROM(uint8_t i2cAddr, uint32_t eeaddress, byte *dest, uint16_t length)
+void readEEPROM(uint8_t i2cAddr, uint32_t eeaddress, uint8_t *dest, uint16_t length)
 {
-  uint16_t          index = 0;
-
   if ( length > EEPROM_MAX_LEN )
     length = EEPROM_MAX_LEN;
 
@@ -172,13 +172,11 @@ uint16_t extractField(char *t, uint16_t field_offset)
 // --------------------------------------------
 int eepromCmd(int arg)
 {
-    uint16_t          eepromAddr = 0, index;
+    uint16_t          eepromAddr = 0;
     uint8_t           eepromI2CAddr = 0x52;
     char              tempStr[256];
-    uint8_t           field_type;
-    uint16_t          field_offset, field_length;
+    uint16_t          field_offset;
     uint8_t           slot;
-    char              *s;
     uint32_t          deltaTime;
     time_t            t;
 

@@ -1,7 +1,7 @@
 #include <Arduino.h>
-#include "main.h"
-#include "cli.h"
-#include "commands.h"
+#include "main.hpp"
+#include "cli.hpp"
+#include "commands.hpp"
 
 // Constant Data
 const char      cliPrompt[] = "cmd> ";
@@ -12,6 +12,16 @@ const char      hello[] = "Dell Xavier NIC 3.0 Test Board V";
 char            *tokens[MAX_TOKENS];
 char            outBfr[OUTBFR_SIZE];
 
+// CLI Command Table structure
+typedef struct {
+    char        cmd[CMD_NAME_MAX];
+    int         (*func) (int x);
+    int         argCount;
+    char        help1[MAX_LINE_SZ];
+    char        help2[MAX_LINE_SZ];
+
+} cli_entry;
+
 // command functions
 int curCmd(int);
 int writeCmd(int arg);
@@ -20,14 +30,14 @@ int setCmd(int arg);
 int pinCmd(int arg);
 int debug(int arg);
 int statusCmd(int arg);
+int eepromCmd(int arg);
 
 // CLI command table
 // format is "command", function, required arg count, "help line 1", "help line 2" 
-const cli_entry     cmdTable[] = {
+cli_entry     cmdTable[8] = {
     {"debug",      debug,  -1, "Debug functions mostly for developer use.",      "Enter 'debug' with no arguments for help."},
     {"help",        help,   0, "NOTE: THIS DOES NOT DISPLAY ON PURPOSE",         " "},
     {"current",   curCmd,   0, "Read current for 12V and 3.3V rails.",           " "},
-//  {"set",       setCmd,   2, "Sets a parameter in EEPROM.",                    "set <param> <value>"},
     {"read",     readCmd,   1, "Read input pin (Arduino numbering).",            "read <pin_number>"},
     {"write",   writeCmd,   2, "Write output pin (Arduino numbering).",          "write <pin_number> <0|1>"},
     {"pins",      pinCmd,   0, "Displays pin names and numbers.",                "Xavier uses Arduino-style pin numbering."},
@@ -88,7 +98,7 @@ void doPrompt(void)
 
 void doHello(void)
 {
-    sprintf(outBfr, "%s %s", hello, VERSION);
+    sprintf(outBfr, "%s %s", hello, VERSION_ID);
     terminalOut(outBfr);
 }
 

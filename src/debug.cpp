@@ -1,6 +1,7 @@
 #include <Arduino.h>
-#include "main.h"
+#include "main.hpp"
 #include "Wire.h"
+#include "eeprom.hpp"
 
 extern uint8_t          eepromAddresses[];
 extern EEPROM_data_t    EEPROMData;

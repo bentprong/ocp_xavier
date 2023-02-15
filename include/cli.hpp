@@ -2,20 +2,9 @@
 #define _CLI_H_
 
 #include <Arduino.h>
-#include "main.h"
+#include "main.hpp"
 
 #define CMD_NAME_MAX                12
-#define MAX_LINE_SZ                 80
-
-// CLI Command Table structure
-typedef struct {
-    char        cmd[CMD_NAME_MAX];
-    int         (*func) (int x);
-    int         argCount;
-    char        help1[MAX_LINE_SZ];
-    char        help2[MAX_LINE_SZ];
-
-} cli_entry;
 
 // possible CLI errors
 #define CLI_ERR_NO_ERROR          0
@@ -30,7 +19,7 @@ void displayLine(char *m);
 void doPrompt(void);
 void doHello(void);
 int waitAnyKey(void);
-
+bool cli(char *raw);
 int help(int);
 
 #endif // _CLI_H_

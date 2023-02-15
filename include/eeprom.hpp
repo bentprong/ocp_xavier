@@ -1,6 +1,8 @@
 #ifndef _EEPROM_H_
 #define _EEPROM_H_
 
+#include <stdint-gcc.h>
+
 // EEPROM data storage struct
 typedef struct {
     uint32_t        sig;      // unique EEPROMP signature (see #define)
@@ -53,7 +55,7 @@ void EEPROM_Save(void);
 void EEPROM_Read(void);
 void EEPROM_Defaults(void);
 bool EEPROM_InitLocal(void);
-void readEEPROM(uint8_t i2cAddr, uint32_t eeaddress, byte *dest, uint16_t length);
-void writeEEPROMPage(uint8_t i2cAddr, long eeAddress, byte *buffer);
+void readEEPROM(uint8_t i2cAddr, uint32_t eeaddress, uint8_t *dest, uint16_t length);
+void writeEEPROMPage(uint8_t i2cAddr, long eeAddress, uint8_t *buffer);
 
 #endif // _EEPROM_H_

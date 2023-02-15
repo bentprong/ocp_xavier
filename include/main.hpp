@@ -2,15 +2,9 @@
 #define _MAIN_H_
 
 #include <Arduino.h>
-#include <stdint-gcc.h>
-#include "commands.h"
-#include "cli.h"
-#include "debug.h"
-#include "eeprom.h"
-#include "float.h"
-#include "time.h"
+#include "cli.hpp"
 
-#define VERSION               "1.0.2"
+#define VERSION_ID               "1.0.2"
 
 // alises to support pin_mgt_t pinFunc - because Arduino doesn't
 // "like" writing to an input pin
@@ -18,6 +12,7 @@
 #define OUTPUT_PIN            OUTPUT
 #define IN_OUT_PIN            4             // reserved future when DIP switches won't short
 
+#define MAX_LINE_SZ                 80
 #define OUTBFR_SIZE                 (MAX_LINE_SZ * 3)
 
 // I/O Pins (using Arduino scheme, see variant.c the spacing between defines aligns with the
@@ -82,10 +77,7 @@ typedef struct {
 
 // misc functions
 void dumpMem(unsigned char *s, int len);
-
-
 const char *getPinName(int pinNo);
 int8_t getPinIndex(uint8_t pinNo);
-
 
 #endif // _MAIN_H_

@@ -1,9 +1,46 @@
 #include "INA219.h"
-#include "main.h"
+#include "main.hpp"
+#include "eeprom.hpp"
 
-extern uint16_t         static_pin_count;
-extern pin_mgt_t        staticPins[];
 extern char             *tokens[];
+
+// pin defs used for 1) pin init and 2) copied into volatile status structure
+// to maintain state of inputs pins that get written 3) pin names (nice, right?) ;-)
+// NOTE: Any I/O that is connected to the DIP switches HAS to be an input because those
+// switches can be strapped to ground.  Thus, if the pin was an output and a 1 was
+// written, there would be a dead short on that pin (no resistors).
+// NOTE: The order of the entries in this table is the order they are displayed by the
+// 'pins' command. There is no other signficance to the order.
+ const pin_mgt_t     staticPins[] = {
+  {           OCP_SCAN_LD_N, INPUT_PIN,   "OCP_SCAN_LD_N"},
+  {         OCP_MAIN_PWR_EN, INPUT_PIN,   "OCP_MAIN_PWR_EN"},
+  {        OCP_SCAN_DATA_IN, OUTPUT_PIN,  "OCP_SCAN_DATA_IN"},
+  {           OCP_PRSNTB1_N, OUTPUT_PIN,  "OCP_PRSNTB1_N"},
+  {             PCIE_PRES_N, INPUT_PIN,   "PCIE_PRES_N"},
+  {              SCAN_VER_0, INPUT_PIN,   "SCAN_VER_0"},
+  {       OCP_SCAN_DATA_OUT, INPUT_PIN,   "OCP_SCAN_DATA_OUT"},
+  {          OCP_AUX_PWR_EN, INPUT_PIN,   "OCP_AUX_PWR_EN"},
+  {            NIC_PWR_GOOD, INPUT_PIN,   "jmp_NIC_PWR_GOOD"},  // jumpered see #define for details
+  {            OCP_PWRBRK_N, INPUT_PIN,   "OCP_PWRBRK_N"},
+  {              OCP_BIF0_N, INPUT_PIN,   "OCP_BIF0_N"},
+  {           OCP_PRSNTB3_N, OUTPUT_PIN,  "OCP_PRSNTB3_N"},
+  {              FAN_ON_AUX, INPUT_PIN,   "FAN_ON_AUX"},
+  {           OCP_SMB_RST_N, OUTPUT_PIN,  "OCP_SMB_RST_N"},
+  {           OCP_PRSNTB0_N, OUTPUT_PIN,  "OCP_PRSNTB0_N"},
+  {              OCP_BIF1_N, INPUT_PIN,   "OCP_BIF1_N"},
+  {            OCP_SLOT_ID0, INPUT_PIN,   "OCP_SLOT_ID0"},
+  {            OCP_SLOT_ID1, INPUT_PIN,   "OCP_SLOT_ID1"},
+  {           OCP_PRSNTB2_N, OUTPUT_PIN,  "OCP_PRSNTB2_N"},
+  {              SCAN_VER_1, INPUT_PIN,   "SCAN_VER_1"},
+  {             PHY_RESET_N, OUTPUT_PIN,  "PHY_RESET_N"},
+  {          RBT_ISOLATE_EN, OUTPUT_PIN,  "RBT_ISOLATE_EN"},
+  {              OCP_BIF2_N, INPUT_PIN,   "OCP_BIF2_N"},
+  {              OCP_WAKE_N, INPUT_PIN,   "OCP_WAKE_N"},
+  {               TEMP_WARN, INPUT_PIN,   "TEMP_WARN"},
+  {               TEMP_CRIT, INPUT_PIN,   "TEMP_CRIT"},
+};
+
+uint16_t      static_pin_count = sizeof(staticPins) / sizeof(pin_mgt_t);
 
 // INA219 defines
 #define U2_SHUNT_MAX_V  0.04      /* Rated max for our shunt is 75mv for 50 A current: */
@@ -25,9 +62,34 @@ INA219::t_i2caddr   u3 = INA219::t_i2caddr(65);
 INA219              u2Monitor(u2);
 INA219              u3Monitor(u3);
 
+// --------------------------------------------
+// configureIOPins()
+// --------------------------------------------
+void configureIOPins(void)
+{
+  pin_size_t        pinNo;
+
+  for ( int i = 0; i < static_pin_count; i++ )
+  {
+      pinNo = staticPins[i].pinNo;
+      pinMode(pinNo, staticPins[i].pinFunc);
+
+      // increase drive strength on output pins
+      if ( staticPins[i].pinFunc == OUTPUT )
+      {
+          // see xavier/variants.cpp for the data in g_APinDescription[]
+          // this will source 7mA, sink 10mA
+          PORT->Group[g_APinDescription[pinNo].ulPort].PINCFG[g_APinDescription[pinNo].ulPin].bit.DRVSTR = 1;
+      }
+  }
+}
+
+// --------------------------------------------
+// monitorsInit() - initialize current monitors
+// --------------------------------------------
 void monitorsInit(void)
 {
-  // NOTE: 'u2' is the chip ID on the schematic
+  // NOTE: 'uN' is the chip ID on the schematic
   u2Monitor.begin();
   u2Monitor.configure(INA219::RANGE_16V, INA219::GAIN_8_320MV, INA219::ADC_16SAMP, INA219::ADC_16SAMP, INA219::CONT_SH_BUS);
   u2Monitor.calibrate(SHUNT_R, U2_SHUNT_MAX_V, U2_BUS_MAX_V, U2_MAX_CURRENT);
@@ -127,7 +189,7 @@ void get3P3VData(float *v3p3I, float *v3p3V)
 // --------------------------------------------
 int curCmd(int arg)
 {
-    float           tempF, v12I, v12V, v3p3I, v3p3V;
+    float           v12I, v12V, v3p3I, v3p3V;
 
     terminalOut((char *) "Acquiring current data, please wait...");
 
@@ -436,6 +498,8 @@ int setCmd(int arg)
         return(1);
     }
 #endif
+
+    terminalOut((char *) "This command is not currently implemented.");
 
     if ( isDirty )
         EEPROM_Save();
