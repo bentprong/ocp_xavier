@@ -5,11 +5,6 @@ rick@fmspcb.com is my email address at Fusion.
 Posted February 16, 2023 at https://github.com/bentprong/ocp_xavier
 Initial Firmware Release: v1.0.3
 
-IMPORTANT NOTE: Feb 16, 2023 -- Due to an issue with Visual Studio Code, paths within the project
-are set to my home directory instead of generic values for the project. This is an open issue in
-GitHub Issues and will be resolved ASAP.  Until it is fixed, the code cannot be built but it CAN
-be programmed using the instructions below.
-
 Overview
 ========
 These instructions have been tested on Windows and Mac.  If you are using a variant of Linux, the
