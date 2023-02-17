@@ -1,3 +1,7 @@
+//===================================================================
+// debug.cpp
+//                     DEBUG FUNCTIONS
+//===================================================================
 #include <Arduino.h>
 #include "main.hpp"
 #include "Wire.h"
@@ -7,10 +11,6 @@ extern uint8_t          eepromAddresses[];
 extern EEPROM_data_t    EEPROMData;
 static char             outBfr[OUTBFR_SIZE];
 extern char             *tokens[];
-
-//===================================================================
-//                     DEBUG FUNCTIONS
-//===================================================================
 
 // --------------------------------------------
 // dumpMem() - debug utility to dump memory
@@ -160,9 +160,9 @@ int debug(int arg)
     if ( arg == 0 )
     {
         terminalOut((char *) "Debug commands are:");
-        terminalOut((char *) "\tscan ... I2C bus scanner");
-        terminalOut((char *) "\treset .. Reset board");
-        terminalOut((char *) "\tdump ... Dump EEPROM");
+        terminalOut((char *) "\tscan .... I2C bus scanner");
+        terminalOut((char *) "\treset ... Reset board, requires reconnection to serial");
+        terminalOut((char *) "\eeprom ... Dump FLASH-simulatedEEPROM");
 
         // add new command help here
         // NOTE: debug stuff is not part of CLI so
@@ -174,7 +174,7 @@ int debug(int arg)
       debug_scan();
     else if ( strcmp(tokens[1], "reset") == 0 )
       debug_reset();
-    else if ( strcmp(tokens[1], "dump") == 0 )
+    else if ( strcmp(tokens[1], "eeprom") == 0 )
       debug_dump_eeprom();
 
     // add new commands here

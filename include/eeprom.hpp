@@ -1,6 +1,10 @@
 #ifndef _EEPROM_H_
 #define _EEPROM_H_
 
+//===================================================================
+// eeprom.hpp
+// Defines for EEPROM drivers - see eeprom.cpp for code.
+//===================================================================
 #include <stdint-gcc.h>
 
 // EEPROM data storage struct
@@ -23,6 +27,7 @@ typedef struct {
   uint8_t         cksum;
 } common_hdr_t;
 
+// Table 11-1 BOARD INFO AREA "header" (first 6 bytes before repeating type/length + data sets)
 typedef struct {
   uint8_t         format_vers;
   uint8_t         board_area_length;
@@ -30,6 +35,7 @@ typedef struct {
   uint8_t         mfg_time[3];           // mins since 0:00 1/1/1996 little endian
 } board_hdr_t;
 
+// Table 12-1 PRODUCT INFO AREA "header" (first 4 bytes before repeating type/length + data sets)
 typedef struct {
     uint8_t     format_vers;
     uint8_t     prod_area_length;
@@ -37,6 +43,7 @@ typedef struct {
     uint8_t     manuf_type_length;
 } prod_hdr_t;
 
+// internal structure used to keep track of FRU section offsets/lengths
 typedef struct {
   uint16_t        board_area_offset_actual;
   uint16_t        board_area_length;
@@ -46,6 +53,7 @@ typedef struct {
   uint16_t        multirecord_area_offset_actual;
 } eeprom_desc_t;
 
+// see section 13 TYPE/LENGTH BYTE FORMAT
 #define TYPE_LENGTH_MASK        0x3F
 #define GET_TYPE(x)             (x >> 6)
 #define GET_LENGTH(x)           (x & TYPE_LENGTH_MASK)

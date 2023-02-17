@@ -1,3 +1,11 @@
+//===================================================================
+// commands.cpp
+// Functions specific to an OCP project - these are the command
+// functions called by the CLI.  Also contains pin definitions that
+// are used by the pins, read and write commands. See also main.hpp
+// for the actual Arduino pin numbering that aligns with variants.cpp
+// README.md in platformio folder of repo has details about this file.
+//===================================================================
 #include "INA219.h"
 #include "main.hpp"
 #include "eeprom.hpp"

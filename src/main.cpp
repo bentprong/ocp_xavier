@@ -1,14 +1,16 @@
+//===================================================================
+// main.cpp
+// Contains setup() initialization and main program loop()
+//===================================================================
 #include <Arduino.h>
 #include "main.hpp"
 #include "commands.hpp"
 #include "eeprom.hpp"
 #include "cli.hpp"
 
+// heartbeat LED blink delays in ms (approx)
 #define FAST_BLINK_DELAY            200
 #define SLOW_BLINK_DELAY            1000
-
-
-
 
 //===================================================================
 //                      setup() - Initialization
@@ -17,20 +19,26 @@ void setup()
 {
   bool        LEDstate = false;
 
-
-  // NOTE: The INA219 driver starts Wire so we don't have to
-  // although it is unclear what the speed is when it does it
+  // NOTE: The INA219 driver starts Wire so we don't have to here
+  // However, it is unclear what the speed is
   //  Wire.begin();
   //  Wire.setClock(400000);
 
   // configure heartbeat LED pin and turn on which indicates that the
-  // board is being initialized
+  // board is being initialized (not much initialization to do!)
+  // NOTE: LED is active low.
   pinMode(PIN_LED, OUTPUT);
   digitalWrite(PIN_LED, LEDstate);
 
   // configure I/O pins
   configureIOPins();
   
+  // init simulated EEPROM
+  EEPROM_InitLocal();
+
+  // init INA219's (and Wire)
+  monitorsInit();
+
   // start serial over USB and wait for a connection
   // NOTE: Baud rate isn't applicable to USB...
   // NOTE: Many libraries won't init unless Serial
@@ -45,12 +53,6 @@ void setup()
       digitalWrite(PIN_LED, LEDstate);
       delay(FAST_BLINK_DELAY);
   }
-
-  // init simulated EEPROM
-  EEPROM_InitLocal();
-
-  // init INA219's (and Wire)
-  monitorsInit();
 
   doHello();
   doPrompt();
@@ -133,11 +135,11 @@ void loop()
     }
     else if ( byteIn == 127 || byteIn == 8 )
     {
-        // delete & backspace do the same thing
+        // delete & backspace do the same thing which is erase last char entered
+        // and backspace once
         if ( inCharCount )
         {
-            inBfr[inCharCount] = 0;
-            inCharCount--;
+            inBfr[inCharCount--] = 0;
             SerialUSB.write(bs, 4);
             SerialUSB.write(' ');
             SerialUSB.write(bs, 4);

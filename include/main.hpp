@@ -1,6 +1,9 @@
 #ifndef _MAIN_H_
 #define _MAIN_H_
-
+//===================================================================
+// main.hpp
+// Definitions that are of general use for the OCP Project.
+//===================================================================
 #include <Arduino.h>
 #include "cli.hpp"
 

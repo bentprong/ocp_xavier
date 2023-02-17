@@ -4,6 +4,9 @@
 #include <Arduino.h>
 #include "main.hpp"
 
+// update CLI_COMMAND_CNT if adding new commands to table in cli.cpp
+#define CLI_COMMAND_CNT     8
+
 #define CMD_NAME_MAX                12
 
 // possible CLI errors

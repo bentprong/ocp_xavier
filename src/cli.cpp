@@ -1,3 +1,8 @@
+//===================================================================
+// cli.cpp 
+// Contains Command Line Interpreter (CLI) and related terminal
+// functions.
+//===================================================================
 #include <Arduino.h>
 #include "main.hpp"
 #include "cli.hpp"
@@ -8,9 +13,9 @@ const char      cliPrompt[] = "cmd> ";
 const int       promptLen = sizeof(cliPrompt);
 const char      hello[] = "Dell Xavier NIC 3.0 Test Board V";
 
-// CLI token stack
+// CLI token stack and formatting buffer
 char            *tokens[MAX_TOKENS];
-char            outBfr[OUTBFR_SIZE];
+static char     outBfr[OUTBFR_SIZE];
 
 // CLI Command Table structure
 typedef struct {
@@ -33,19 +38,22 @@ int statusCmd(int arg);
 int eepromCmd(int arg);
 
 // CLI command table
+// CLI_COMMAND_CNT is defined in cli.hpp
 // format is "command", function, required arg count, "help line 1", "help line 2" 
-cli_entry     cmdTable[8] = {
-    {"debug",      debug,  -1, "Debug functions mostly for developer use.",      "Enter 'debug' with no arguments for help."},
-    {"help",        help,   0, "NOTE: THIS DOES NOT DISPLAY ON PURPOSE",         " "},
+// NOTE: -1 as arg count means "don't check arguments"
+// NOTE: " " (space) on 2nd line of help doesn't display anything (for short helps)
+// NOTE: These are in alphabetical order for presentation (except help) FYI...
+cli_entry     cmdTable[CLI_COMMAND_CNT] = {
     {"current",   curCmd,   0, "Read current for 12V and 3.3V rails.",           " "},
-    {"read",     readCmd,   1, "Read input pin (Arduino numbering).",            "read <pin_number>"},
-    {"write",   writeCmd,   2, "Write output pin (Arduino numbering).",          "write <pin_number> <0|1>"},
-    {"pins",      pinCmd,   0, "Displays pin names and numbers.",                "Xavier uses Arduino-style pin numbering."},
-    {"status", statusCmd,   0, "Displays status of I/O pins etc.",               " "},
+    {"debug",      debug,  -1, "Debug functions mostly for developer use.",      "Enter 'debug' with no arguments for more info."},
     {"eeprom", eepromCmd,  -1, "Displays FRU EEPROM info areas if no args.",     "'eeprom <addr> <length>' dumps <length> bytes @ <addr>"},
-};
+    {"pins",      pinCmd,   0, "Displays pin names and numbers.",                "NOTE: Xavier uses Arduino-style pin numbering."},
+    {"read",     readCmd,   1, "Read input pin (Arduino numbering).",            "'read <pin_number>'"},
+    {"status", statusCmd,   0, "Displays status of I/O pins etc.",               " "},
+    {"write",   writeCmd,   2, "Write output pin (Arduino numbering).",          "'write <pin_number> <0|1>'"},
 
-#define CLI_ENTRIES     (sizeof(cmdTable) / sizeof(cli_entry))
+    {"help",        help,   0, "NOTE: THIS DOES NOT DISPLAY ON PURPOSE",         " "},    
+};
 
 // --------------------------------------------
 // CURSOR() - position cursor at (r,c) on ANSI
@@ -96,6 +104,9 @@ void doPrompt(void)
     SerialUSB.flush();
 }
 
+// --------------------------------------------
+// doHello() - display welcome message
+// --------------------------------------------
 void doHello(void)
 {
     sprintf(outBfr, "%s %s", hello, VERSION_ID);
@@ -160,13 +171,14 @@ bool cli(char *raw)
         return(false);
     }
 
+    // adjust arg count to not include the command itself (token[0]
     argCount = tokNdx - 1;
 
-    for ( int i = 0; i < (int) CLI_ENTRIES; i++ )
+    for ( int i = 0; i < (int) CLI_COMMAND_CNT; i++ )
     {
         if ( strncmp(tokens[0], cmdTable[i].cmd, len) == 0 )
         {
-            if ( cmdTable[i].argCount == argCount || cmdTable[i].argCount == -1 )
+            if ( (cmdTable[i].argCount == argCount) || (cmdTable[i].argCount == -1) )
             {
                 // command funcs are passed arg count, tokens are global
                 (cmdTable[i].func) (argCount);
@@ -219,7 +231,7 @@ int help(int arg)
     terminalOut((char *) "character entered. Commands available are:");
     terminalOut((char *) " ");
 
-    for ( int i = 0; i < (int) CLI_ENTRIES; i++ )
+    for ( int i = 0; i < (int) CLI_COMMAND_CNT; i++ )
     {
       if ( strcmp(cmdTable[i].cmd, "help") == 0 )
         continue;
@@ -227,7 +239,7 @@ int help(int arg)
       sprintf(outBfr, "%s\t%s", cmdTable[i].cmd, cmdTable[i].help1);
       terminalOut(outBfr);
 
-      if ( cmdTable[i].help2 != NULL )
+      if ( strcmp(cmdTable[i].help2, " ") != 0 )
       {
         sprintf(outBfr, "\t%s", cmdTable[i].help2);
         terminalOut(outBfr);
