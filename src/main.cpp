@@ -30,9 +30,11 @@ void setup()
   pinMode(PIN_LED, OUTPUT);
   digitalWrite(PIN_LED, LEDstate);
 
-  // configure I/O pins
+  // configure I/O pins and read all inputs
+  // NOTE: Output pins will be 0 initially
   configureIOPins();
-  
+  readAllInputPins();
+
   // init simulated EEPROM
   EEPROM_InitLocal();
 

@@ -18,7 +18,14 @@ uint8_t                 eepromAddresses[4] = {0, 0x52, 0, 0x56};    // NOTE: the
 const uint32_t          jan1996 = 820454400;                        // epoch time (secs) of 1/1/1996 00:00
 
 // FLASH/EEPROM Data buffer
-EEPROM_data_t       EEPROMData;
+EEPROM_data_t           EEPROMData;
+
+// FRU EEPROM stuff
+common_hdr_t            commonHeader;
+board_hdr_t             boardHeader;
+prod_hdr_t              prodHeader;
+eeprom_desc_t           EEPROMDescriptor;
+const char              sixBitASCII[64] = " !\"$%&'()*+,-./123456789:;<=>?ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_";
 
 //===================================================================
 //                      EEPROM/NVM Stuff
@@ -73,14 +80,9 @@ void writeEEPROMPage(uint8_t i2cAddr, long eeAddress, byte *buffer)
   Wire.endTransmission();                 //Send stop condition
 }
 
-
-
-common_hdr_t      commonHeader;
-board_hdr_t       boardHeader;
-prod_hdr_t        prodHeader;
-eeprom_desc_t     EEPROMDescriptor;
-const char        sixBitASCII[64] = " !\"$%&'()*+,-./123456789:;<=>?ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_";
-
+// --------------------------------------------
+// unpack6bitASCII()
+// --------------------------------------------
 void unpack6bitASCII(char *s, uint8_t field_length, uint8_t *bytes)
 {
     uint8_t         temp;
@@ -106,6 +108,15 @@ void unpack6bitASCII(char *s, uint8_t field_length, uint8_t *bytes)
     *s = 0;
 }
 
+// --------------------------------------------
+// extractField() - extract next field in an
+// EEPROM area
+//
+// Uses data in EEPROMBuffer at field_offset
+// which is the type/length byte of the first
+// field, then extracts/decodes the data into
+// the char field pointed to by t.
+// --------------------------------------------
 uint16_t extractField(char *t, uint16_t field_offset)
 {
     uint8_t             field_type = GET_TYPE(EEPROMBuffer[field_offset]);
@@ -127,7 +138,8 @@ uint16_t extractField(char *t, uint16_t field_offset)
     }
     else if ( field_type == 1 )
     {
-        // BCD plus per 13.1 in platform mgt spec
+        // BCD plus per 13.1 in platform mgt spec 
+        // TODO - untested, haven't seen this type of data in test boards
         while ( field_length-- > 0 )
         {
             temp = EEPROMBuffer[field_offset] >> 4;
@@ -301,7 +313,7 @@ int eepromCmd(int arg)
     // nor is the check for the 0xC1 terminator checked
 
 #if 0
-// 2/13/23 R Lewis - defer this because the product areas appear similar to the board areas
+// See GitHub Issue #4 (Need Dell decision on FRU EEPROM 'other areas'
     // read the product area header
     eepromAddr = EEPROMDescriptor.product_area_offset_actual;
     readEEPROM(eepromI2CAddr, eepromAddr, (uint8_t *) &prodHeader, sizeof(prod_hdr_t));
@@ -364,6 +376,9 @@ void EEPROM_Read(void)
 void EEPROM_Defaults(void)
 {
     EEPROMData.sig = EEPROM_signature;
+    EEPROMData.status_delay_secs = 3;
+
+    // TODO add other fields
 }
 
 // --------------------------------------------

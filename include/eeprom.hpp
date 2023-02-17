@@ -9,7 +9,8 @@
 
 // EEPROM data storage struct
 typedef struct {
-    uint32_t        sig;      // unique EEPROMP signature (see #define)
+    uint32_t        sig;                  // unique EEPROMP signature (see #define)
+    uint16_t        status_delay_secs;    // time in secs to delay updating status display
 
     // TODO add more data
 

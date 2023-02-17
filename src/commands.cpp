@@ -1,5 +1,6 @@
 //===================================================================
 // commands.cpp
+//
 // Functions specific to an OCP project - these are the command
 // functions called by the CLI.  Also contains pin definitions that
 // are used by the pins, read and write commands. See also main.hpp
@@ -9,8 +10,10 @@
 #include "INA219.h"
 #include "main.hpp"
 #include "eeprom.hpp"
+#include <math.h>
 
 extern char             *tokens[];
+extern EEPROM_data_t    EEPROMData;
 
 // pin defs used for 1) pin init and 2) copied into volatile status structure
 // to maintain state of inputs pins that get written 3) pin names (nice, right?) ;-)
@@ -51,6 +54,8 @@ extern char             *tokens[];
 uint16_t      static_pin_count = sizeof(staticPins) / sizeof(pin_mgt_t);
 
 // INA219 defines
+// FIXME See GitHub Issue #1 (Current values are incorrect: need values for INA219 setup)
+// NOTE: These values were imported from the INA219 Library example code
 #define U2_SHUNT_MAX_V  0.04      /* Rated max for our shunt is 75mv for 50 A current: */
                                   /* we will measure only up to 20A so max is about 75mV*20/50 */
 #define U2_BUS_MAX_V    16.0      /* with 12v lead acid battery this should be enough*/
@@ -61,10 +66,12 @@ uint16_t      static_pin_count = sizeof(staticPins) / sizeof(pin_mgt_t);
 #define U3_MAX_CURRENT  3.0       /* In our case this is enaugh even tho shunt is capable to 50 A*/
 #define SHUNT_R         0.01      /* Shunt resistor in ohms (R211 and R210 are the same ohms) */
 
+#define STATUS_DISPLAY_DELAY_ms     3000
+
 static char             outBfr[OUTBFR_SIZE];
 uint8_t                 pinStates[PINS_COUNT] = {0};
 
-// INA219 stuff (Un is chip ID on schematic)
+// INA219 stuff ('Un' is chip ID on schematic)
 INA219::t_i2caddr   u2 = INA219::t_i2caddr(64);
 INA219::t_i2caddr   u3 = INA219::t_i2caddr(65);
 INA219              u2Monitor(u2);
@@ -129,6 +136,7 @@ int readCmd(int arg)
     // would have to be extracted from the pin map
     // digitalPinToPort(pin) yields port # if pin is Arduino style
     pin = digitalRead((pin_size_t) pinNo);
+    pinStates[pinNo] = pin;
     sprintf(outBfr, "Pin %d (%s) = %d", pinNo, getPinName(pinNo), pin);
     terminalOut(outBfr);
     return(0);
@@ -155,9 +163,7 @@ int writeCmd(int arg)
         return(1);
     }  
 
-    if ( value == 0 || value == 1 )
-      ;
-    else
+    if ( value != 0 && value != 1 )
     {
         terminalOut((char *) "Invalid pin value; please enter either 0 or 1");
         return(1);
@@ -203,21 +209,15 @@ int curCmd(int arg)
 
     get12VData(&v12I, &v12V);
     get3P3VData(&v3p3I, &v3p3V);
-
-//    float v12Power = u2Monitor.busPower() * 1000.0;
-
     delay(100);
 
-
-//    float v3p3Power = u3Monitor.busPower() * 1000.0;
-
-    sprintf(outBfr, "12V shunt current:  %5.2f mA", v12I);
+    sprintf(outBfr, "12V shunt current:  %d mA", (int) v12I);
     terminalOut(outBfr);
 
     sprintf(outBfr, "12V bus voltage:    %5.2f V", v12V);
     terminalOut(outBfr);
 
-    sprintf(outBfr, "3.3V shunt current: %5.2f mA", v3p3I);
+    sprintf(outBfr, "3.3V shunt current: %d mA", (int) v3p3I);
     terminalOut(outBfr);
 
     sprintf(outBfr, "3.3V bus voltage:   %5.2f V", v3p3V);
@@ -234,24 +234,27 @@ int pinCmd(int arg)
 {
     int         count = static_pin_count;
     int         index = 0;
+    uint8_t     pinNo;
 
-    terminalOut((char *) " #           Pin Name   I/O              #        Pin Name     I/O");
-    terminalOut((char *) "------------------------------------------------------------------");
+    terminalOut((char *) " #           Pin Name   I/O              #        Pin Name      I/O ");
+    terminalOut((char *) "-------------------------------------------------------------------- ");
 
     while ( count > 0 )
     {
       if ( count == 1 )
       {
-          sprintf(outBfr, "%2d %20s %c ", staticPins[index].pinNo, staticPins[index].name,
-                  staticPins[index].pinFunc == INPUT ? 'I' : 'O');
+          sprintf(outBfr, "%2d %20s %c %d ", staticPins[index].pinNo, staticPins[index].name,
+                  staticPins[index].pinFunc == INPUT ? 'I' : 'O', pinStates[staticPins[index].pinNo]);
           terminalOut(outBfr);
           break;
       }
       else
       {
-          sprintf(outBfr, "%2d %20s %c\t\t%2d %20s %c ", 
-                  staticPins[index].pinNo, staticPins[index].name, staticPins[index].pinFunc == INPUT ? 'I' : 'O',
-                  staticPins[index+1].pinNo, staticPins[index+1].name, staticPins[index+1].pinFunc == INPUT ? 'I' : 'O');
+          pinNo = staticPins[index].pinNo;
+          sprintf(outBfr, "%2d %20s %c %d\t\t%2d %20s %c %d ", 
+                  pinNo, staticPins[index].name, staticPins[index].pinFunc == INPUT ? 'I' : 'O', pinStates[pinNo],
+                  staticPins[index+1].pinNo, staticPins[index+1].name, staticPins[index+1].pinFunc == INPUT ? 'I' : 'O',
+                  pinStates[staticPins[index+1].pinNo]);
           terminalOut(outBfr);
           count -= 2;
           index += 2;
@@ -281,15 +284,30 @@ int pinCmd(int arg)
  }
 
 // --------------------------------------------
-// statusCmd() - status display
+// readAllInputPins() 
+// --------------------------------------------
+void readAllInputPins(void)
+{
+    uint8_t             pinNo;
+
+    // NOTE: Outputs are latched after the last write or are 0
+    // from reset.
+    for ( int i = 0; i < static_pin_count; i++ )
+    {
+        pinNo = staticPins[i].pinNo;
+        if ( staticPins[i].pinFunc == INPUT_PIN )
+        {
+            pinStates[pinNo] = digitalRead(pinNo);
+        }
+    }
+}
+
+// --------------------------------------------
+// statusCmd() - status display (real-time)
+// can be stopped by pressing any key
 // --------------------------------------------
 int statusCmd(int arg)
 {
-    uint8_t           temp = 0;
-    char              rightBfr[42];
-    int               leftLen, padLen;
-    char              *s;
-    uint8_t           pinNo;
     float             v12I, v12V, v3p3I, v3p3V;
 
     while ( 1 )
@@ -298,19 +316,8 @@ int statusCmd(int arg)
       get12VData(&v12I, &v12V);
       get3P3VData(&v3p3I, &v3p3V);
 
-      // read all input pins
-      // NOTE: Outputs are latched after the last write or are 0
-      // from reset.
-      for ( int i = 0; i < static_pin_count; i++ )
-      {
-          pinNo = staticPins[i].pinNo;
-          if ( staticPins[i].pinFunc == INPUT_PIN )
-          {
-              pinStates[pinNo] = digitalRead(pinNo);
-          }
-      }
+      readAllInputPins();
 
-      // clear display
       CLR_SCREEN();
       CURSOR(1, 29);
       displayLine((char *) "Xavier Status Display");
@@ -376,25 +383,27 @@ int statusCmd(int arg)
       displayLine(outBfr);  
 
       CURSOR(11,1);
-      sprintf(outBfr, "12V: %5.2f %5.2f  mA", v12V, v12I);
+      sprintf(outBfr, "12V: %5.2f %d  mA", v12V, (int) v12I);
       displayLine(outBfr);
 
       CURSOR(11,55);
-      sprintf(outBfr, "3.3V: %5.2f %5.2f mA", v3p3V, v3p3I);
+      sprintf(outBfr, "3.3V: %5.2f %d mA", v3p3V, (int) v3p3I);
       displayLine(outBfr);
 
-      // info line & check for any key pressed
       CURSOR(24, 22);
       displayLine((char *) "Hit any key to exit this display");
 
       if ( SerialUSB.available()  )
       {
-        (void) SerialUSB.read();
+        // flush any user input and exit
+        while ( SerialUSB.available() )
+            (void) SerialUSB.read();
+
         CLR_SCREEN();
         return(0);
       }
 
-      delay(3000);
+      delay(EEPROMData.status_delay_secs * 1000);
     }
 
     return(0);
@@ -404,6 +413,8 @@ int statusCmd(int arg)
 
 // --------------------------------------------
 // getPinName() - get name of pin from pin #
+// Returns pointer to pin name, or 'unknown' 
+// if pinNo not found.
 // --------------------------------------------
 const char *getPinName(int pinNo)
 {
@@ -418,7 +429,8 @@ const char *getPinName(int pinNo)
 
 // --------------------------------------------
 // getPinIndex() - get index into staticPins[]
-// based on Arduino pin #
+// based on Arduino pin #. Returns -1 if pin
+// not found, else index.
 // --------------------------------------------
 int8_t getPinIndex(uint8_t pinNo)
 {
@@ -431,6 +443,14 @@ int8_t getPinIndex(uint8_t pinNo)
     return(-1);
 }
 
+void set_help(void)
+{
+    terminalOut((char *) "EEPROM Parameters are:");
+    terminalOut((char *) "  sdelay <int> ........ status display delay in seconds");
+
+    // TODO add more set command help here
+}
+
 //===================================================================
 //                              SET Command
 //
@@ -440,77 +460,39 @@ int8_t getPinIndex(uint8_t pinNo)
 //===================================================================
 int setCmd(int arg)
 {
+
     char          *parameter = tokens[1];
-    String        userEntry = tokens[2];
+    String        valueEntered = tokens[2];
     float         fValue;
     int           iValue;
     bool          isDirty = false;
-#if 0
-    if ( strcmp(parameter, "k") == 0 )
+
+    if ( arg == 0 )
     {
-        fValue = userEntry.toFloat();
-        if ( EEPROMData.K != fValue )
-        {
-          EEPROMData.K = fValue;
-          isDirty = true;
-        }
+        set_help();
+        return(0);
     }
-    else if ( strcmp(parameter, "gain") == 0 )
+
+    if ( strcmp(parameter, "sdelay") == 0 )
     {
         // set ADC gain error
-        iValue = userEntry.toInt();
-        if (EEPROMData.gainError != iValue )
+        iValue = valueEntered.toInt();
+        if (EEPROMData.status_delay_secs != iValue )
         {
           isDirty = true;
-          EEPROMData.gainError = iValue;
-        }
-    }
-    else if ( strcmp(parameter, "offset") == 0 )
-    {
-        // set ADC offset error
-        iValue = userEntry.toInt();
-        if (EEPROMData.offsetError != iValue )
-        {
-          isDirty = true;
-          EEPROMData.offsetError = iValue;
-        }
-    }
-    else if ( strcmp(parameter, "corr") == 0 )
-    {
-        // set ADC corr on|off
-        if ( strcmp(tokens[2], "off") == 0 )
-        {
-          if ( EEPROMData.enCorrection == true )
-          {
-              EEPROMData.enCorrection = false;
-              terminalOut("ADC correction off");
-              isDirty = true;
-          }
-        }
-        else if ( strcmp(tokens[2], "on") == 0 )
-        {
-            if ( EEPROMData.enCorrection == false )
-            {
-                EEPROMData.enCorrection = true;
-                isDirty = true;
-            }
-        }
-        else
-        {
-          terminalOut("Invalid ADC corr argument: must be 'on' or 'off'");
+          EEPROMData.status_delay_secs = iValue;
         }
     }
     else
     {
         terminalOut("Invalid parameter name");
+        set_help();
         return(1);
     }
-#endif
-
-    terminalOut((char *) "This command is not currently implemented.");
 
     if ( isDirty )
         EEPROM_Save();
 
     return(0);
-}
+
+} // setCmd()

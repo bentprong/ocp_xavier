@@ -49,6 +49,7 @@ cli_entry     cmdTable[CLI_COMMAND_CNT] = {
     {"eeprom", eepromCmd,  -1, "Displays FRU EEPROM info areas if no args.",     "'eeprom <addr> <length>' dumps <length> bytes @ <addr>"},
     {"pins",      pinCmd,   0, "Displays pin names and numbers.",                "NOTE: Xavier uses Arduino-style pin numbering."},
     {"read",     readCmd,   1, "Read input pin (Arduino numbering).",            "'read <pin_number>'"},
+    {"set",       setCmd,  -1, "Set EEPROM parameter to a value.",               "'set <param> <value>' sets value; or 'set' with no args for help."},
     {"status", statusCmd,   0, "Displays status of I/O pins etc.",               " "},
     {"write",   writeCmd,   2, "Write output pin (Arduino numbering).",          "'write <pin_number> <0|1>'"},
 

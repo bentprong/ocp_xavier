@@ -141,8 +141,24 @@ void debug_reset(void)
 void debug_dump_eeprom(void)
 {
     terminalOut((char *) "EEPROM Contents:");
-    sprintf(outBfr, "Signature: %08X", (unsigned int) EEPROMData.sig);
+    sprintf(outBfr, "Signature:           %08X", (unsigned int) EEPROMData.sig);
     terminalOut(outBfr);
+    sprintf(outBfr, "Status delay (secs): %d", EEPROMData.status_delay_secs);
+    SHOW();
+
+    // TODO add more fields
+}
+
+static void debug_help(void)
+{
+    terminalOut((char *) "Debug commands are:");
+    terminalOut((char *) "\tscan ..... I2C bus scanner");
+    terminalOut((char *) "\treset .... Reset board, requires reconnection to serial");
+    terminalOut((char *) "\teeprom ... Dump FLASH-simulated EEPROM");
+
+    // add new command help here
+    // NOTE: debug stuff is not part of CLI so
+    // the built-in CLI help doesn't apply
 }
 
 // --------------------------------------------
@@ -159,29 +175,24 @@ int debug(int arg)
 {
     if ( arg == 0 )
     {
-        terminalOut((char *) "Debug commands are:");
-        terminalOut((char *) "\tscan .... I2C bus scanner");
-        terminalOut((char *) "\treset ... Reset board, requires reconnection to serial");
-        terminalOut((char *) "\eeprom ... Dump FLASH-simulatedEEPROM");
-
-        // add new command help here
-        // NOTE: debug stuff is not part of CLI so
-        // the built-in CLI help doesn't apply
+        debug_help();
         return(0);
     }
 
+    // very simplistic 'parser' since debug is not part of the requirements
+    // add new 'else if ...' for a new debug command here, add help above,
+    // then add debug_<function>() function above debug() to avoid having to
+    // prototype that function.
     if ( strcmp(tokens[1], "scan") == 0 )
       debug_scan();
     else if ( strcmp(tokens[1], "reset") == 0 )
       debug_reset();
     else if ( strcmp(tokens[1], "eeprom") == 0 )
       debug_dump_eeprom();
-
-    // add new commands here
-
     else
     {
       terminalOut((char *) "Invalid debug command");
+      debug_help();
       return(1);
     }
 
