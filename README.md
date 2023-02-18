@@ -1,9 +1,9 @@
 # ocp_vulcan
 Dell OCP Xavier NIC 3.0 Test Board
 Written by Richard Lewis rlewis@astlenterprises.com for Fusion Manufacturing Services 
-rick@fmspcb.com is my email address at Fusion.
-Posted February 16, 2023 at https://github.com/bentprong/ocp_xavier
-Initial Firmware Release: v1.0.3
+   rick@fmspcb.com is my email address at Fusion.
+Posted February 18, 2023 at https://github.com/bentprong/ocp_xavier
+Initial Firmware Release: v1.0.4
 
 Overview
 ========
@@ -93,6 +93,12 @@ and tools.  It may take quite a bit of time.
 
 7. In the repo folder platformio, open the README file and follow the instructions to configure PIO for the
 Xavier board.  There are 2 steps to this process explained in the README.
+
+--------------------------------------------------------------------------------------------------
+** FLASHING NOTE ** Failure to exactly follow the instructions in the README in step #7 will
+result in the code not building correctly!   That is because the files that must be copied or
+updated define the pinouts for the Xavier project.  You have been warned!
+--------------------------------------------------------------------------------------------------
 
 Wiring Instructions
 ===================
