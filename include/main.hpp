@@ -7,7 +7,7 @@
 #include <Arduino.h>
 #include "cli.hpp"
 
-#define VERSION_ID               "1.0.3"
+#define VERSION_ID               "1.0.4"
 
 // alises to support pin_mgt_t pinFunc - because Arduino doesn't
 // "like" writing to an input pin
