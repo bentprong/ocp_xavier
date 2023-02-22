@@ -14,7 +14,7 @@ extern const uint16_t   static_pin_count;
 extern char             *tokens[];
 static char             outBfr[OUTBFR_SIZE];
 const uint32_t          EEPROM_signature = 0xDE110C02;              // the hex means "DEll Open Compute 02 (Xavier)"
-uint8_t                 eepromAddresses[4] = {0, 0x52, 0, 0x56};    // NOTE: these DO NOT match Table 67
+uint8_t                 eepromAddresses[4] = {0x50, 0x52, 0x54, 0x56};    // NOTE: these DO NOT match Table 67 but work
 const uint32_t          jan1996 = 820454400;                        // epoch time (secs) of 1/1/1996 00:00
 
 // FLASH/EEPROM Data buffer
