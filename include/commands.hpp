@@ -12,6 +12,8 @@ int8_t getPinIndex(uint8_t pinNo);
 int statusCmd(int arg);
 char *padBuffer(int pos);
 void configureIOPins(void);
-void readAllInputPins(void);
+void readAllPins(void);
+void writePin(uint8_t pinNo, uint8_t value);
+bool readPin(uint8_t pinNo);
 
 #endif // _COMMANDS_H_

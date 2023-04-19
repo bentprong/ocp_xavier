@@ -33,7 +33,7 @@ void setup()
   // configure I/O pins and read all inputs
   // NOTE: Output pins will be 0 initially
   configureIOPins();
-  readAllInputPins();
+  readAllPins();
 
   // init simulated EEPROM
   EEPROM_InitLocal();

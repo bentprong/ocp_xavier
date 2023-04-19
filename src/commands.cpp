@@ -11,6 +11,7 @@
 #include "main.hpp"
 #include "eeprom.hpp"
 #include <math.h>
+#include "commands.hpp"
 
 extern char             *tokens[];
 extern EEPROM_data_t    EEPROMData;
@@ -83,18 +84,31 @@ INA219              u3Monitor(u3);
 void configureIOPins(void)
 {
   pin_size_t        pinNo;
+  uint8_t           pinFunc;
 
   for ( int i = 0; i < static_pin_count; i++ )
   {
+      // output only pins are always defined as outputs
+      // in-out pins are defined as inputs except when
+      // being written to
+      if ( staticPins[i].pinFunc == OUTPUT_PIN )
+        pinFunc = OUTPUT;
+      else
+        pinFunc = INPUT;
+
       pinNo = staticPins[i].pinNo;
-      pinMode(pinNo, staticPins[i].pinFunc);
+      pinMode(pinNo, pinFunc);
 
       // increase drive strength on output pins
-      if ( staticPins[i].pinFunc == OUTPUT )
+      // NOTE: IN_OUT_PINs are defined as outputs
+      if ( staticPins[i].pinFunc != INPUT_PIN )
       {
           // see xavier/variants.cpp for the data in g_APinDescription[]
           // this will source 7mA, sink 10mA
           PORT->Group[g_APinDescription[pinNo].ulPort].PINCFG[g_APinDescription[pinNo].ulPin].bit.DRVSTR = 1;
+
+          // NOTE: This assumes that all outputs are active high!
+          writePin(pinNo, 0);
       }
   }
 }
@@ -118,26 +132,45 @@ void monitorsInit(void)
 //                    READ, WRITE COMMANDS
 //===================================================================
 
+bool readPin(uint8_t pinNo)
+{
+    uint8_t         index = getPinIndex(pinNo);
+
+    // if ( staticPins[index].pinFunc == OUTPUT )
+    // {
+    //     pinStates[index] = (*portOutputRegister(digitalPinToPort(pinNo)) & digitalPinToBitMask(pinNo)) == 0 ? 0 : 1;
+    // }
+    // else
+    // {
+    if ( staticPins[index].pinFunc == INPUT )
+        pinStates[getPinIndex(pinNo)] = digitalRead((pin_size_t) pinNo);
+ //   }
+
+    return(pinStates[pinNo]);
+}
+
+void writePin(uint8_t pinNo, uint8_t value)
+{
+    digitalWrite(pinNo, value);
+    pinStates[getPinIndex(pinNo)] = (bool) value;
+}
+
 // --------------------------------------------
 // readCmd() - read pin
 // --------------------------------------------
 int readCmd(int arg)
 {
-    uint8_t       pin;
     uint8_t       pinNo = atoi(tokens[1]);
-
+    uint8_t       index = getPinIndex(pinNo);
+    
     if ( pinNo > PINS_COUNT )
     {
         terminalOut((char *) "Invalid pin number; please use Arduino numbering");
         return(1);
     }
 
-    // TODO alternative is bitRead() but it requires a port, so that
-    // would have to be extracted from the pin map
-    // digitalPinToPort(pin) yields port # if pin is Arduino style
-    pin = digitalRead((pin_size_t) pinNo);
-    pinStates[pinNo] = pin;
-    sprintf(outBfr, "Pin %d (%s) = %d", pinNo, getPinName(pinNo), pin);
+    (void) readPin(pinNo);
+    sprintf(outBfr, "Pin %d (%s) = %d", pinNo, getPinName(pinNo), pinStates[index]);
     terminalOut(outBfr);
     return(0);
 }
@@ -157,11 +190,16 @@ int writeCmd(int arg)
         return(1);
     }    
 
-    if ( staticPins[index].pinFunc != OUTPUT_PIN )
+    if ( staticPins[index].pinFunc == INPUT_PIN )
     {
         terminalOut((char *) "Cannot write to an input pin! Use 'pins' command for help.");
         return(1);
     }  
+    else if ( staticPins[index].pinFunc == IN_OUT_PIN )
+    {
+        // IN_OUT pin so switch to output mode to write
+        pinMode(staticPins[index].pinNo, OUTPUT);
+    }
 
     if ( value != 0 && value != 1 )
     {
@@ -169,8 +207,12 @@ int writeCmd(int arg)
         return(1);
     }
 
-    digitalWrite(pinNo, value);
-    pinStates[pinNo] = (bool) value;
+    writePin(pinNo, value);
+
+    // if IN_OUT pin switch back to input mode
+    if ( staticPins[index].pinFunc == IN_OUT_PIN )
+        pinMode(staticPins[index].pinNo, INPUT);
+
     sprintf(outBfr, "Wrote %d to pin # %d (%s)", value, pinNo, getPinName(pinNo));
     terminalOut(outBfr);
     return(0);
@@ -228,6 +270,19 @@ int curCmd(int arg)
 } // curCmd()
 
 // --------------------------------------------
+// getPinChar() - get I,O or B pin designator
+// --------------------------------------------
+char getPinChar(int index)
+{
+    if ( staticPins[index].pinFunc == INPUT_PIN )
+        return('I');
+    else if ( staticPins[index].pinFunc == OUTPUT_PIN )
+        return('O');
+    else
+        return('B');
+}
+
+// --------------------------------------------
 // pinCmd() - dump all I/O pins on terminal
 // --------------------------------------------
 int pinCmd(int arg)
@@ -244,7 +299,7 @@ int pinCmd(int arg)
       if ( count == 1 )
       {
           sprintf(outBfr, "%2d %20s %c %d ", staticPins[index].pinNo, staticPins[index].name,
-                  staticPins[index].pinFunc == INPUT ? 'I' : 'O', pinStates[staticPins[index].pinNo]);
+                  getPinChar(index), pinStates[getPinIndex(staticPins[index].pinNo)]);
           terminalOut(outBfr);
           break;
       }
@@ -252,9 +307,9 @@ int pinCmd(int arg)
       {
           pinNo = staticPins[index].pinNo;
           sprintf(outBfr, "%2d %20s %c %d\t\t%2d %20s %c %d ", 
-                  pinNo, staticPins[index].name, staticPins[index].pinFunc == INPUT ? 'I' : 'O', pinStates[pinNo],
-                  staticPins[index+1].pinNo, staticPins[index+1].name, staticPins[index+1].pinFunc == INPUT ? 'I' : 'O',
-                  pinStates[staticPins[index+1].pinNo]);
+                  pinNo, staticPins[index].name, getPinChar(index), pinStates[getPinIndex(staticPins[index].pinNo)],
+                  staticPins[index+1].pinNo, staticPins[index+1].name, getPinChar(index+1),
+                  pinStates[getPinIndex(staticPins[index+1].pinNo)]);
           terminalOut(outBfr);
           count -= 2;
           index += 2;
@@ -284,23 +339,17 @@ int pinCmd(int arg)
  }
 
 // --------------------------------------------
-// readAllInputPins() 
+// readAllPins() 
 // --------------------------------------------
-void readAllInputPins(void)
+void readAllPins(void)
 {
-    uint8_t             pinNo;
-
-    // NOTE: Outputs are latched after the last write or are 0
-    // from reset.
     for ( int i = 0; i < static_pin_count; i++ )
     {
-        pinNo = staticPins[i].pinNo;
-        if ( staticPins[i].pinFunc == INPUT_PIN )
-        {
-            pinStates[pinNo] = digitalRead(pinNo);
-        }
+        (void) readPin(staticPins[i].pinNo);
     }
 }
+
+
 
 // --------------------------------------------
 // statusCmd() - status display (real-time)
@@ -316,7 +365,7 @@ int statusCmd(int arg)
       get12VData(&v12I, &v12V);
       get3P3VData(&v3p3I, &v3p3V);
 
-      readAllInputPins();
+      readAllPins();
 
       CLR_SCREEN();
       CURSOR(1, 29);
@@ -463,7 +512,6 @@ int setCmd(int arg)
 
     char          *parameter = tokens[1];
     String        valueEntered = tokens[2];
-    float         fValue;
     int           iValue;
     bool          isDirty = false;
 
@@ -485,7 +533,7 @@ int setCmd(int arg)
     }
     else
     {
-        terminalOut("Invalid parameter name");
+        terminalOut((char *) "Invalid parameter name");
         set_help();
         return(1);
     }

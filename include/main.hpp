@@ -7,10 +7,17 @@
 #include <Arduino.h>
 #include "cli.hpp"
 
-#define VERSION_ID               "1.0.4"
+#define VERSION_ID               "1.0.5"
+
+typedef enum {
+  ACT_UNDEF = 0,
+  ACT_LO,
+  ACT_HI,
+} ACTIVE_STATE;
+
 
 // alises to support pin_mgt_t pinFunc - because Arduino doesn't
-// "like" writing to an input pin
+// "like" writing to an input pinread
 #define INPUT_PIN             INPUT
 #define OUTPUT_PIN            OUTPUT
 #define IN_OUT_PIN            4             // reserved future when DIP switches won't short

@@ -1,12 +1,15 @@
-# ocp_vulcan
-Dell OCP Xavier NIC 3.0 Test Board
-Written by Richard Lewis rlewis@astlenterprises.com for Fusion Manufacturing Services 
-   rick@fmspcb.com is my email address at Fusion.
+# ocp_xavier
+OCP Xavier NIC 3.0 Test Board
+Written by Richard Lewis for Fusion Manufacturing Services 
+   rick@fmspcb.com 
+   rlewis@astlenterprises.com
 Posted February 18, 2023 at https://github.com/bentprong/ocp_xavier
 Initial Firmware Release: v1.0.4
 
-Overview
-========
+## Release v1.0.5 April 19, 2023
+Updated Arduino files in the 'platformio' subdirectory of this repo.
+
+## Overview
 These instructions have been tested on Windows and Mac.  If you are using a variant of Linux, the
 instructions for Mac should apply except possibly for the "screen" terminal emulator program.  At
 a minimum you need to select a Linux terminal emulation program and open the USB TTY with it.
@@ -18,13 +21,14 @@ project was to re-use the USB serial code that was working, plus the simulated E
 The project is built using the PlatformIO extension for Visual Studio Code.  An ATMEL-ICE was
 used to debug the code on the board and can be used to program the binary using Microchip Studio.
 
-Operating Instructions
-======================
+## Operating Instructions
 Enter the 'help' command to get a list of the available commands, and details about usage of
 each command.
 
-The simulated EEPROM (in FLASH) was inherited from Vulcan but is not currently used.  You can
-verify that it is operational by entering 'debug eeprom' command.
+The simulated EEPROM (in FLASH) is only used to set 'sdelay' the delay between status page
+updates.   You can verify that it is operational by entering 'debug eeprom' command. The
+'set' command can be used to change this delay 'set sdelay <secs>' where <secs> is an integer
+value in seconds.
 
 Do  not confuse this simulated EEPROM with the FRU EEPROM on a NIC 3.0 board.  The command to
 access FRU EEPROM contents is just 'eepom' (see help for more).
@@ -43,8 +47,7 @@ Backspace and delete are implemented and erase the previous character typed.
 Up arrow executes the previous command.
 In this document, <ENTER> means press the keyboard Enter key.
 
-Getting Started
-===============
+## Getting Started
 Follow the Wiring and Terminal Instructions below to get started using the Xavier board.
 
 The board firmware prompt is "cmd>" and when you see that, you can enter "help<ENTER>" for help on the
@@ -52,9 +55,7 @@ available commands.
 
 The purpose of the board is to provide debug capabilities for NIC 3.0 cards.  
 
-Development Environment Setup
-=============================
-
+## Development Environment Setup
 This varies slightly between platforms including Mac, Linux and Windows.
 
 1. Download and install Visual Studio Code.
@@ -77,7 +78,7 @@ cannot and have not been tested.
     Mac:      <home> = Users/<username>
 
 4. Log into GitHub.com using your own credentials then clone this repository: 
-    bentprong/ocp_vulcan 
+    bentprong/ocp_xavier
     
 into your Projects folder.
 
@@ -100,8 +101,7 @@ result in the code not building correctly!   That is because the files that must
 updated define the pinouts for the Xavier project.  You have been warned!
 --------------------------------------------------------------------------------------------------
 
-Wiring Instructions
-===================
+## Wiring Instructions
 1. Connect Xavier board to ATMEL-ICE and connect ATMEL-ICE to computer (debug only)
 2. Connect Xavier board USB-C port to computer USB port using a DATA CABLE (not a charging only cable).
 3. Windows only: If not already installed, install a terminal emulator program such as TeraTerm.
@@ -130,13 +130,11 @@ If the MCU_LED is off, the board firmware never started up.   The firmware turns
 first starts, then it initializes itself and the harware, then it starts fast blinking unless errors
 were encountered in which case it stays on.
 
-Build/Debug Instructions
-========================
+## Build/Debug Instructions
 In VSC, click Run | Start Debugging.  The code will be built for debug and you should see the debugger
 stop in main() at the init() call.   Click the blue |> icon in the debugger control area of VSC.
 
-Binary Executable Instructions
-==============================
+## Binary Executable Instructions
 In VSC, click the checkmark in the blue line at the bottom to build a firmware release.  If no problems
 are reported (there should be none), the executable is located here:
     <home>/Projects/ocp-xavier/.pio/build/samd21g18a/firmware.bin
@@ -147,8 +145,7 @@ Use any flash utility such as Microchip Studio to erase and burn this .bin file 
 
 NOTE: PIO "upload" does not work, because there is intentionally no bootloader on the Xavier board.
 
-Microchip Studio
-----------------
+## Microchip Studio
 1. Open Studio then select Tools | Device Programming.
 2. Select Atmel-ICE from the Tool pulldown menu.  Verify that the Device is ATSAMD21G18A then click
 the Apply button.  A menu of options will appear on the left of the screen now.
@@ -165,8 +162,7 @@ NOTE:  There may be a conflict between VSC and Microchip Studio if you are tryin
 flash the firmware.  Close out VSC and Studio, then restart Studio.  The conflict would be in these
 2 software programs trying to use the Atmel-ICE at the same time.
 
-Terminal Instructions
-=====================
+## Terminal Instructions
 Windows: In TeraTerm, open a new serial connection on the new COM port and press ENTER. You should see
 the Xavier welcome message and Xavier prompt cmd> in the TeraTerm window.
 
@@ -181,8 +177,7 @@ Linux (eg Ubuntu): You can install screen or minicom using apt.  For screen, use
 screen /dev/ttyUSB0 115200 if the connection is on ttyUSB0. Check the /dev directory for any
 matches to ttyUSB*.
 
-Known Issues
-============
+## Known Issues
 1. Some characters are lost sometimes in the serial terminal.  Workaround: execute the command again.
 
 Also, in GitHub.com, click on the Issue link next to <> Code to view any outstanding Issues.

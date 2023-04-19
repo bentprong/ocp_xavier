@@ -36,38 +36,30 @@
 // ----
 
 // Number of pins defined in PinDescription array
-#define PINS_COUNT           (26u)
+#define PINS_COUNT           (36u)
 #define NUM_DIGITAL_PINS     (22u)
-#define NUM_ANALOG_INPUTS    (7u)
-#define NUM_ANALOG_OUTPUTS   (1u)
+#define NUM_ANALOG_INPUTS    (0u)
+#define NUM_ANALOG_OUTPUTS   (0u)
 #define analogInputToDigitalPin(p)  ((p < 7u) ? (p) + 15u : -1)
 
 // Low-level pin register query macros
 // -----------------------------------
 #define digitalPinToPort(P)      (&(PORT->Group[g_APinDescription[P].ulPort]))
 #define digitalPinToBitMask(P)   (1 << g_APinDescription[P].ulPin)
-//#define analogInPinToBit(P)    ()
 #define portOutputRegister(port) (&(port->OUT.reg))
 #define portInputRegister(port)  (&(port->IN.reg))
 #define portModeRegister(port)   (&(port->DIR.reg))
 #define digitalPinHasPWM(P)      (g_APinDescription[P].ulPWMChannel != NOT_ON_PWM || g_APinDescription[P].ulTCChannel != NOT_ON_TIMER)
 
-/*
- * digitalPinToTimer(..) is AVR-specific and is not defined for SAMD
- * architecture. If you need to check if a pin supports PWM you must
- * use digitalPinHasPWM(..).
- *
- * https://github.com/arduino/Arduino/issues/1833
- */
-// #define digitalPinToTimer(P)
-
-// LEDs
+// LED
 // ----
-#define PIN_LED     (1u)
+#define PIN_LED     (13u)
 #define LED_BUILTIN PIN_LED
 
 // Analog pins
 // -----------
+// NOTE: Dell OCP - even though Xavier is not using analog, deleting these causes the
+// Arduino libraries to be very unhappy.
 #define PIN_A0   (15u)
 #define PIN_A1   (16u)
 #define PIN_A2   (17u)
@@ -87,35 +79,9 @@ static const uint8_t A6   = PIN_A6;
 static const uint8_t DAC0 = PIN_DAC0;
 #define ADC_RESOLUTION 12
 
-// SPI Interfaces
+// SPI Interfaces - none for Xavier
 // --------------
-#define SPI_INTERFACES_COUNT 2
-
-// SPI
-#define PIN_SPI_MISO  (10u)
-#define PIN_SPI_MOSI  (8u)
-#define PIN_SPI_SCK   (9u)
-#define PIN_SPI_SS    (24u)
-#define PERIPH_SPI    sercom1
-#define PAD_SPI_TX    SPI_PAD_0_SCK_1
-#define PAD_SPI_RX    SERCOM_RX_PAD_3
-static const uint8_t SS   = PIN_SPI_SS;   // SPI Slave SS not used. Set here only for reference.
-static const uint8_t MOSI = PIN_SPI_MOSI;
-static const uint8_t MISO = PIN_SPI_MISO;
-static const uint8_t SCK  = PIN_SPI_SCK;
-
-// SPI1: Connected to WINC1501B
-#define PIN_SPI1_MISO (29u)
-#define PIN_SPI1_MOSI (26u)
-#define PIN_SPI1_SCK  (27u)
-#define PIN_SPI1_SS   (28u)
-#define PERIPH_SPI1   sercom2
-#define PAD_SPI1_TX   SPI_PAD_0_SCK_1
-#define PAD_SPI1_RX   SERCOM_RX_PAD_3
-static const uint8_t SS1   = PIN_SPI1_SS;
-static const uint8_t MOSI1 = PIN_SPI1_MOSI;
-static const uint8_t MISO1 = PIN_SPI1_MISO;
-static const uint8_t SCK1  = PIN_SPI1_SCK;
+#define SPI_INTERFACES_COUNT 0
 
 // Wire Interfaces
 // ---------------
@@ -124,8 +90,8 @@ static const uint8_t SCK1  = PIN_SPI1_SCK;
 // Wire
 #define PIN_WIRE_SDA        (11u)
 #define PIN_WIRE_SCL        (12u)
-#define PERIPH_WIRE         sercom0
-#define WIRE_IT_HANDLER     SERCOM0_Handler
+#define PERIPH_WIRE         sercom1
+#define WIRE_IT_HANDLER     SERCOM1_Handler
 static const uint8_t SDA = PIN_WIRE_SDA;
 static const uint8_t SCL = PIN_WIRE_SCL;
 
@@ -135,24 +101,9 @@ static const uint8_t SCL = PIN_WIRE_SCL;
 #define PIN_USB_DP          (23ul)
 #define PIN_USB_HOST_ENABLE (24ul)
 
-// I2S Interfaces
+// I2S Interfaces - none for Xavier
 // --------------
-#define I2S_INTERFACES_COUNT 1
-
-#define I2S_DEVICE          0
-#define I2S_CLOCK_GENERATOR 3
-#define PIN_I2S_SD          (PIN_A6)
-#define PIN_I2S_SCK         (2u)
-#define PIN_I2S_FS          (3u)
-
-// Needed for WINC1501B (WiFi101) library
-// --------------------------------------
-#define WINC1501_RESET_PIN   (30u)
-#define WINC1501_CHIP_EN_PIN (31u)
-#define WINC1501_INTN_PIN    (33u)
-#define WINC1501_SPI         SPI1
-#define WINC1501_SPI_CS_PIN  PIN_SPI1_SS
-
+#define I2S_INTERFACES_COUNT 0
 
 // Serial ports
 // ------------
@@ -168,12 +119,14 @@ extern SERCOM sercom3;
 extern SERCOM sercom4;
 extern SERCOM sercom5;
 
-// Serial1
+// Serial1 - untested on debug port, left as-is from XPro
 extern Uart Serial1;
 #define PIN_SERIAL1_RX (5ul)		// samw25 	xpro
 #define PIN_SERIAL1_TX (4ul)		// samw25	xpro
 #define PAD_SERIAL1_TX (UART_TX_PAD_2)
 #define PAD_SERIAL1_RX (SERCOM_RX_PAD_3)
+
+
 #endif // __cplusplus
 
 // These serial port names are intended to allow libraries and architecture-neutral
@@ -196,6 +149,6 @@ extern Uart Serial1;
 #define SERIAL_PORT_HARDWARE        Serial1
 #define SERIAL_PORT_HARDWARE_OPEN   Serial1
 
-// Alias Serial to SerialUSB
-#define Serial                      Serial1
+// Alias Serial to SerialUSB note this was changed for Xavier
+#define Serial                      SerialUSB
 
