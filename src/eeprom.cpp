@@ -9,6 +9,10 @@
 #include <time.h>
 #include "eeprom.hpp"
 #include "cli.hpp"
+#include "commands.hpp"
+
+// uncomment line below to enable hex dumps of EEPROM regions
+//#define EEPROM_DEBUG 1
 
 extern const uint16_t   static_pin_count;
 extern char             *tokens[];
@@ -37,10 +41,15 @@ const char              sixBitASCII[64] = " !\"$%&'()*+,-./123456789:;<=>?ABCDEF
 // temporary read buffer for FRU EEPROM
 byte              EEPROMBuffer[EEPROM_MAX_LEN];
 
-// --------------------------------------------
-// readEEPROM() - read from FRU EEPROM into
-// EEPROMBuffer up to max length
-// --------------------------------------------
+/**
+  * @name   readEEPROM
+  * @brief  read FRU EEPROM
+  * @param  i2cAddr 
+  * @param  eeaddress 
+  * @param  dest pointer to write data to
+  * @param  length in bytes to read
+  * @retval None
+  */
 void readEEPROM(uint8_t i2cAddr, uint32_t eeaddress, uint8_t *dest, uint16_t length)
 {
   if ( length > EEPROM_MAX_LEN )
@@ -65,6 +74,13 @@ void readEEPROM(uint8_t i2cAddr, uint32_t eeaddress, uint8_t *dest, uint16_t len
 // FRU EEPROM. NOTE: Not in use, here in case.
 // NOTE: Not tested! Should work, hahah.
 // --------------------------------------------
+/**
+  * @name   writeEEPROMPage
+  * @brief  write page of data to FRU EEPROM
+  * @param  None
+  * @retval None
+  * @note   NOT TESTED!
+  */
 void writeEEPROMPage(uint8_t i2cAddr, long eeAddress, byte *buffer)
 {
 
@@ -83,6 +99,14 @@ void writeEEPROMPage(uint8_t i2cAddr, long eeAddress, byte *buffer)
 // --------------------------------------------
 // unpack6bitASCII()
 // --------------------------------------------
+/**
+  * @name   unpack6bitASCII
+  * @brief  unpack into 8-bit ASCII
+  * @param  s pointer to write unpacked  data to
+  * @param  field_length
+  * @param  bytes pointer to packed data
+  * @retval None
+  */
 void unpack6bitASCII(char *s, uint8_t field_length, uint8_t *bytes)
 {
     uint8_t         temp;
@@ -183,7 +207,9 @@ uint16_t extractField(char *t, uint16_t field_offset)
 }
 
 // --------------------------------------------
-// eepromCmd() - 'eeprom' command
+// eepromCmd() - 'eeprom' command works on FRU
+// EEPROM only; simulated EEPROM is called 
+// FLASH to user.
 // --------------------------------------------
 int eepromCmd(int arg)
 {
@@ -195,28 +221,79 @@ int eepromCmd(int arg)
     uint32_t          deltaTime;
     time_t            t;
 
+    if ( isCardPresent() == false )
+    {
+        terminalOut((char *) "NIC card is not present; cannot query FRU EEPROM");
+        return(1);
+    }
+
     // read the slot ID, which determines the FRU EEPROM I2C address
     // NOTE: Default is for slot 1...
     slot = digitalRead(OCP_SLOT_ID1) << 1 | digitalRead(OCP_SLOT_ID0);
     if ( slot >= 0 && slot <= 3 )
-      eepromI2CAddr = eepromAddresses[slot];
-
-    if ( arg == 2 )
     {
-        // 'eeprom <offset> <length>' command dumps FRU EEPROM at offset for length bytes
-        uint16_t        length = atoi(tokens[2]);
-        uint16_t        offset = atoi(tokens[1]);
+        eepromI2CAddr = eepromAddresses[slot];
+    }
+    else
+    {
+        terminalOut((char *) "Invalid slot ID, cannot determine EEPROM I2C address");
+        return(1);
+    }
 
-        readEEPROM(eepromI2CAddr, offset, EEPROMBuffer, length);
-        dumpMem(EEPROMBuffer, length);
-        return(0);
+    if ( arg == 1 )
+    {
+        if ( strcmp(tokens[1], "show") != 0 )
+        {
+            terminalOut((char *) "Invalid subcommand, use 'show' to display EEPROM contents.");
+            return(1);
+        }
+    }
+    else if ( arg == 3 )
+    {
+        if ( strcmp(tokens[1], "dump") == 0 )
+        {
+            // 'eeprom dump <offset> <length>' command dumps FRU EEPROM at offset for length bytes
+            uint16_t        offset = atoi(tokens[2]);
+            uint16_t        length = atoi(tokens[3]);
+
+            if ( offset > MAX_EEPROM_ADDR )
+            {
+                sprintf(outBfr, "offset of %d exceeds EEPROM capacity, use a smaller number", offset);
+                SHOW();
+                return(1);
+            }
+
+            if ( length > (16 * 20) )
+            {
+                sprintf(outBfr, "length of %d exceeds maximum, use a smaller number", length);
+                SHOW();
+                return(1);
+            }
+
+            readEEPROM(eepromI2CAddr, offset, EEPROMBuffer, length);
+            dumpMem(EEPROMBuffer, length);
+            return(0);
+        }
+        else
+        {
+            sprintf(outBfr, "Invalid eeprom subcommand '%s'", tokens[1]);
+            SHOW();
+            return(1);
+        }
+    }
+    else
+    {
+        showCommandHelp(tokens[0]);
+        return(1);
     }
 
     // the first byte in the EEPROM should be a 1 which is the format version
+    // TODO: this may evolve over time and the code below need to be refactored
     readEEPROM(eepromI2CAddr, 0, EEPROMBuffer, 1);
     if ( EEPROMBuffer[0] != 1 )
     {
-        sprintf(outBfr, "Unable to locate FRU EEPROM");
+        sprintf(outBfr, "Unable to locate FRU EEPROM at expected SMB address 0x%02X", eepromI2CAddr);
+        SHOW();
         return(0);
     }
 
@@ -225,8 +302,10 @@ int eepromCmd(int arg)
 
     // read common header
     readEEPROM(eepromI2CAddr, eepromAddr, (byte *) &commonHeader, sizeof(common_hdr_t));
-//    dumpMem((unsigned char *) &commonHeader, sizeof(common_hdr_t));
 
+#ifdef EEPROM_DEBUG
+    dumpMem((unsigned char *) &commonHeader, sizeof(common_hdr_t));
+#endif
     terminalOut((char *) "--- COMMON HEADER DATA");
     sprintf(outBfr, "Format version:  %d", commonHeader.format_vers & 0xF);
     SHOW();
@@ -247,17 +326,18 @@ int eepromCmd(int arg)
     sprintf(outBfr, "Board Area:      %d", EEPROMDescriptor.board_area_offset_actual);
     SHOW();
 
-    sprintf(outBfr, "Product Area:    %d", EEPROMDescriptor.product_area_offset_actual);
+    sprintf(outBfr, "Product Area:    %d (not supported)", EEPROMDescriptor.product_area_offset_actual);
     SHOW();
 
-    sprintf(outBfr, "MRecord Area:    %d", EEPROMDescriptor.multirecord_area_offset_actual);
+    sprintf(outBfr, "MRecord Area:    %d (not supported)", EEPROMDescriptor.multirecord_area_offset_actual);
     SHOW();
 
     // read first 7 bytes of board info area "header" to determine length
     eepromAddr = EEPROMDescriptor.board_area_offset_actual;
     readEEPROM(eepromI2CAddr, eepromAddr, (byte *) &boardHeader, sizeof(board_hdr_t));
-//    dumpMem(EEPROMBuffer, sizeof(board_hdr_t));
-
+#ifdef EEPROM_DEBUG
+    dumpMem(EEPROMBuffer, sizeof(board_hdr_t));
+#endif
     EEPROMDescriptor.board_area_length = boardHeader.board_area_length * 8;
 
     terminalOut((char *) "--- BOARD AREA DATA");
@@ -280,8 +360,9 @@ int eepromCmd(int arg)
     // read the entire board area
     eepromAddr += sizeof(board_hdr_t);
     readEEPROM(eepromI2CAddr, eepromAddr, (byte *) &EEPROMBuffer, EEPROMDescriptor.board_area_length);
-//    dumpMem((unsigned char *) EEPROMBuffer, EEPROMDescriptor.board_area_length);
-
+#ifdef EEPROM_DEBUG
+    dumpMem((unsigned char *) EEPROMBuffer, EEPROMDescriptor.board_area_length);
+#endif
     field_offset = 0;
 
     // extract manufacturer name; type/lenth is last item in board header
@@ -313,7 +394,7 @@ int eepromCmd(int arg)
     // nor is the check for the 0xC1 terminator checked
 
 #if 0
-// See GitHub Issue #4 (Need Dell decision on FRU EEPROM 'other areas'
+// See GitHub Issue #4 (Need a decision on FRU EEPROM 'other areas'
     // read the product area header
     eepromAddr = EEPROMDescriptor.product_area_offset_actual;
     readEEPROM(eepromI2CAddr, eepromAddr, (uint8_t *) &prodHeader, sizeof(prod_hdr_t));
@@ -377,6 +458,7 @@ void EEPROM_Defaults(void)
 {
     EEPROMData.sig = EEPROM_signature;
     EEPROMData.status_delay_secs = 3;
+    EEPROMData.pwr_seq_delay_msec = 250;
 
     // TODO add other fields
 }
@@ -397,9 +479,7 @@ bool EEPROM_InitLocal(void)
     {
       // EEPROM failed: either never been used, or real failure
       // initialize the signature and settings
-
-      // FIXME: When debugging, EEPROM fails every time, but it
-      // is OK over resets and power cycles.  
+ 
       EEPROM_Defaults();
 
       // save EEPROM data on the device

@@ -8,6 +8,9 @@
 #include "eeprom.hpp"
 #include "cli.hpp"
 
+// timers
+void timers_Init(void);
+
 // heartbeat LED blink delays in ms (approx)
 #define FAST_BLINK_DELAY            200
 #define SLOW_BLINK_DELAY            1000
@@ -35,6 +38,13 @@ void setup()
   configureIOPins();
   readAllPins();
 
+  // disable main & aux power to NIC 3.0 card
+  writePin(OCP_MAIN_PWR_EN, 0);
+  writePin(OCP_AUX_PWR_EN, 0);
+
+  // deassert PHY reset
+  writePin(PHY_RESET_N, 1);
+
   // init simulated EEPROM
   EEPROM_InitLocal();
 
@@ -56,6 +66,7 @@ void setup()
       delay(FAST_BLINK_DELAY);
   }
 
+  timers_Init();
   doHello();
   doPrompt();
 
@@ -72,6 +83,13 @@ void setup()
 // terminated input line has been received, it calls the CLI to
 // parse and execute any valid command, or sends an error message.
 //===================================================================
+/**
+  * @name   loop
+  * @brief  main program loop
+  * @param  None
+  * @retval None
+  * @note   see comment block for more info
+  */
 void loop() 
 {
   int             byteIn;
@@ -158,3 +176,10 @@ void loop()
   }
 
 } // loop()
+
+/**
+  * @name   
+  * @brief  
+  * @param  None
+  * @retval None
+  */

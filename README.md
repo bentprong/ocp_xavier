@@ -6,6 +6,10 @@ Written by Richard Lewis for Fusion Manufacturing Services
 Posted February 18, 2023 at https://github.com/bentprong/ocp_xavier
 Initial Firmware Release: v1.0.4
 
+## Release v1.1.0 TBD
+Merged new features from TTF project here including scan chain, card detection, and new 
+commands/help.
+
 ## Release v1.0.5 April 19, 2023
 Updated Arduino files in the 'platformio' subdirectory of this repo.
 

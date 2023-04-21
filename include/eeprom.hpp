@@ -7,11 +7,14 @@
 //===================================================================
 #include <stdint-gcc.h>
 
+#define MAX_EEPROM_ADDR       (8 * 1024 - 1)
+
 // EEPROM data storage struct
 typedef struct {
     uint32_t        sig;                  // unique EEPROMP signature (see #define)
     uint16_t        status_delay_secs;    // time in secs to delay updating status display
-
+    uint16_t        pwr_seq_delay_msec;   // time between MAIN and AUX pwr enables
+    
     // TODO add more data
 
 } EEPROM_data_t;

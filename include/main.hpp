@@ -7,7 +7,9 @@
 #include <Arduino.h>
 #include "cli.hpp"
 
-#define VERSION_ID               "1.0.5"
+#define VERSION_ID               "1.0.6"
+#define BUILD_DATE                __DATE__
+#define BUILD_TIME                __TIME__
 
 typedef enum {
   ACT_UNDEF = 0,
@@ -30,7 +32,7 @@ typedef enum {
 #define OCP_SCAN_LD_N         0   // PA22
 #define OCP_MAIN_PWR_EN       1   // PA23
 #define OCP_SCAN_DATA_IN      2   // PA10
-//#define OCP_SCAN_CLK          3   // PA11 -- clock output is not accessible by CLI
+#define OCP_SCAN_CLK          3   // PA11 
 
 #define OCP_PRSNTB1_N         4   // PB10
 #define PCIE_PRES_N           5   // PB11
@@ -82,6 +84,7 @@ typedef enum {
 typedef struct {
   uint8_t           pinNo;
   uint8_t           pinFunc;
+  ACTIVE_STATE      activeState;
   char              name[20];
 } pin_mgt_t;
 
