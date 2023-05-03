@@ -21,6 +21,7 @@ void timers_Init(void);
 void setup() 
 {
   bool        LEDstate = false;
+  uint16_t    counter;
 
   // NOTE: The INA219 driver starts Wire so we don't have to here
   // However, it is unclear what the speed is
@@ -31,7 +32,7 @@ void setup()
   // board is being initialized (not much initialization to do!)
   // NOTE: LED is active low.
   pinMode(PIN_LED, OUTPUT);
-  digitalWrite(PIN_LED, LEDstate);
+  digitalWrite(PIN_LED, LOW);
 
   // configure I/O pins and read all inputs
   // NOTE: Output pins will be 0 initially
@@ -66,6 +67,21 @@ void setup()
       delay(FAST_BLINK_DELAY);
   }
 
+  // issue #10 workaround: set LED on, close the USB connection,
+  // wait, then re-open the USB connection. This is a Windows-
+  // only issue but works on Mac as well.
+  digitalWrite(PIN_LED, LOW);
+  SerialUSB.end();
+  counter = 20;
+
+  while ( counter-- > 0 )
+  {
+        LEDstate = LEDstate ? 0 : 1;
+        digitalWrite(PIN_LED, LEDstate);
+        delay(FAST_BLINK_DELAY);
+  }
+
+  SerialUSB.begin(115200);
   timers_Init();
   doHello();
   doPrompt();
