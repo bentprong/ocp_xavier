@@ -1,6 +1,9 @@
 /*
   Copyright (c) 2016 Arduino LLC.  All right reserved.
 
+  Modified by Richard Lewis, Fusion Manufacturing Services, May 2023
+  For OCP projects.
+  
   This library is free software; you can redistribute it and/or
   modify it under the terms of the GNU Lesser General Public
   License as published by the Free Software Foundation; either
@@ -21,9 +24,13 @@
 #include <Arduino.h>
 
 #include "api/USBAPI.h"
+
+// R Lewis 5/2/2023 added "USB/" prefix to these 3 lines
 #include "USB/USBAPI.h"
 #include "USB/SAMD21_USBDevice.h"
 #include "USB/CDC.h"
+// end modification
+
 #include "api/PluggableUSB.h"
 
 #include <stdlib.h>
@@ -490,8 +497,9 @@ uint32_t USBDeviceClass::recvControl(void *_data, uint32_t len)
 {
 	uint8_t *data = reinterpret_cast<uint8_t *>(_data);
 
-#warning uncommented this line
+	// R Lewis 5/2/2023 uncommented this line
 	usbd.epBank0AckSetupReceived(0);
+
 	uint32_t read = armRecvCtrlOUT(0);
 	if (read > len)
 		read = len;
