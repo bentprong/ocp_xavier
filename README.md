@@ -7,13 +7,15 @@ Posted February 18, 2023 at https://github.com/bentprong/ocp_xavier
 Initial Firmware Release: v1.0.4
 
 ## Release v1.0.7 May 4, 2023
-Merged new features from TTF project here including scan chain, card detection, and new 
-commands/help.
 1. Fixed issue with Windows/TeraTerm not recognizing a connection to the board a) on
 some power cycles and b) when the Windows machine sleeps.
+2. Updated terminal instructions below.
+
+## Release v1.0.6 April 23, 2023
+Merged new features from TTF project here including scan chain, card detection, and new 
+commands/help.
 
 ## Release v1.0.5 April 19, 2023
-NOTE: v1.0.6 was an internal release.
 Updated Arduino files in the 'platformio' subdirectory of this repo.
 
 ## Overview
@@ -121,14 +123,16 @@ A third LED may be lit if a NIC 3.0 board is inserted into the bay and the power
 This is the OCP_PWR_GOOD LED.
 
 A fourth MCU_LED near the P-UART1 connector should be fast blinking (4-5 times a second).  This 
-means that the board has initialized OK and is waiting on a USB/serial connection.
+means that the board has initialized OK and is waiting on a USB/serial connection.  For more O/S-
+specific information on LED behavior, please see Terminal Instructions below.
 
 If the MCU_LED is on solid, an initialization error occured.  Best bet is to program the board again.
 If all LEDs are off, then the board is not receiving any power.  Check the USB
 cable and that it is firmly in the USB connector.
 
 NOTE: The board is supposed to be able to be powered from USB 5V, if the SW_DEV_PWR jumper is
-installed.  However, that does not appear to work.
+installed.  However, that does not to work.  You must have an ATX power supply connected to the
+appropriate connector on Xavier.  The setting of the SW_DEV_PWR jumper doesn't matter.
 
 Once a connection is made, the MCU_LED will slow blink to indicate a heartbeat from the board and
 firmware.
@@ -142,15 +146,21 @@ In VSC, click Run | Start Debugging.  The code will be built for debug and you s
 stop in main() at the init() call.   Click the blue |> icon in the debugger control area of VSC.
 
 ## Binary Executable Instructions
-In VSC, click the checkmark in the blue line at the bottom to build a firmware release.  If no problems
+It is not necessary or recommended to build the firmware in order to obtain a release.  The firmware.bin
+file mentioned below can be directly programmed into the Xavier board following the Microchip Studio
+instructions.
+
+To build the release firmware, in VSC, click the checkmark in the blue line at the bottom.  If no problems
 are reported (there should be none), the executable is located here:
     <home>/Projects/ocp-xavier/.pio/build/samd21g18a/firmware.bin
 
 Note that in this same location is also the firmware.elf file which is the debug version of firmware.
 
-Use any flash utility such as Microchip Studio to erase and burn this .bin file into the Xavier board.
+Use any flash utility such as Microchip Studio to erase the chip and burn this .bin file into the Xavier 
+board.
 
-NOTE: PIO "upload" does not work, because there is intentionally no bootloader on the Xavier board.
+NOTE: PIO "upload" does not work, because there is intentionally no bootloader on the Xavier board. This
+firmware is NOT an Arduino sketch.
 
 ## Microchip Studio
 1. Open Studio then select Tools | Device Programming.
@@ -170,23 +180,56 @@ flash the firmware.  Close out VSC and Studio, then restart Studio.  The conflic
 2 software programs trying to use the Atmel-ICE at the same time.
 
 ## Terminal Instructions
-Windows: In TeraTerm, open a new serial connection on the new COM port and press ENTER. You should see
-the Xavier welcome message and Xavier prompt cmd> in the TeraTerm window.
 
-Mac: Get a listing of TTYs like this:
+Serial over USB does not require a baud rate in order to function, but most software programs
+such as Mac screen and Windows TeraTerm do require the baud rate. Set it to 115200.
+
+### Windows: 
+It is a good idea to have Device Manager open and the serial ports section expanded, so that
+you can see when a new USB port for the Xavier board is enumerated.  It gets enumerated
+when you plug the USB cable into the computer.
+
+Note that before connecting Xavier to a Windows computer, but with the ATMEL-ICE connected,
+there will be at least one COM port that is assigned to the ATMEL-ICE but not used.   After
+plugging in the Xavier board, a second COM port will appear as a USB device (or as OCP Xavier)
+depending on Windows release.  It is this second COM port that you will want to connect to
+in order to use the built-in serial terminal.
+
+If no ATMEL-ICE is connected then watch for a new COM port and use that one.  While it is
+often the last COM port in the list in TeraTerm, that is not always the case.  That's why
+having Device Manager open is helpful, in order to see the new COM port appear.
+
+In TeraTerm, open a new serial connection on the appropriate COM port and press ENTER. You 
+should see the Xavier welcome message and command prompt cmd> in the TeraTerm window.
+
+The MCU LED on the Xavier board will fast blink while waiting for and establishing a serial
+connection.  This may take up to one minute so be patient.  If reconnecting to a Windows
+computer that has been sleeping, you may have to press ENTER several times in the TeraTerm
+window to prompt TeraTerm to reconnect.  Again, the reconnection process takes quite a bit
+of time.
+
+Once the connection is established, the MCU LED will momentarily go on solid, then start
+slow blinking.
+
+### Mac: 
+Get a listing of TTYs like this:
     user@computer ~ % ls -l /dev/tty.usb*
     crw-rw-rw-  1 root  wheel    9,   2 Jan 17 14:02 /dev/tty.usbmodem146201 
 
-Enter "screen /dev/tty.usbmodem146201" and you should see the Xavier welcome message and Xavier 
+Enter "screen /dev/tty.usbmodem146201 115200" and you should see the Xavier welcome message and Xavier 
 prompt cmd> in the terminal window.
 
-Linux (eg Ubuntu): You can install screen or minicom using apt.  For screen, use this command:
+### Linux (eg Ubuntu): 
+You can install screen or minicom using apt.  For screen, use this command:
 screen /dev/ttyUSB0 115200 if the connection is on ttyUSB0. Check the /dev directory for any
-matches to ttyUSB*.
+matches to ttyUSB*.  For minicom, Google is your new best friend.
 
 ## Known Issues
-1. Some characters are lost sometimes in the serial terminal.  Workaround: execute the command again.
+In GitHub.com, in the Xavier repository, click on the Issue link next to <> Code to view any 
+outstanding Issues.
 
-Also, in GitHub.com, click on the Issue link next to <> Code to view any outstanding Issues.
+Please open a new Issue if you encounter problems.
+
+Thank you for using OCP Xavier!
 
 
