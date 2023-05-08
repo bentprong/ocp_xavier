@@ -28,6 +28,7 @@ void setup()
   // NOTE: Output pins will be 0 initially
   // then updated on any writePin()
   configureIOPins();
+  pinMode(PIN_LED, OUTPUT);
   digitalWrite(PIN_LED, LOW);
   readAllPins();
 
@@ -77,6 +78,7 @@ void loop()
         terminalOut((char *) "Press ENTER if prompt is not shown");
         doPrompt();
         isFirstTime = false;
+        time = millis();
     }
     else
     {
