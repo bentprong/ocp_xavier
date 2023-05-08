@@ -15,28 +15,20 @@ void timers_Init(void);
 #define FAST_BLINK_DELAY            200
 #define SLOW_BLINK_DELAY            1000
 
-//===================================================================
-//                      setup() - Initialization
-//===================================================================
+/**
+  * @name   setup
+  * @brief  system initialization
+  * @param  None
+  * @retval None
+  */
 void setup() 
 {
-  bool        LEDstate = false;
-  uint16_t    counter;
-
-  // NOTE: The INA219 driver starts Wire so we don't have to here
-  // However, it is unclear what the speed is
-  //  Wire.begin();
-  //  Wire.setClock(400000);
-
-  // configure heartbeat LED pin and turn on which indicates that the
-  // board is being initialized (not much initialization to do!)
-  // NOTE: LED is active low.
-  pinMode(PIN_LED, OUTPUT);
-  digitalWrite(PIN_LED, LOW);
-
   // configure I/O pins and read all inputs
+  // into pinStates[]
   // NOTE: Output pins will be 0 initially
+  // then updated on any writePin()
   configureIOPins();
+  digitalWrite(PIN_LED, LOW);
   readAllPins();
 
   // disable main & aux power to NIC 3.0 card
@@ -46,82 +38,61 @@ void setup()
   // deassert PHY reset
   writePin(PHY_RESET_N, 1);
 
-  // init simulated EEPROM
-  EEPROM_InitLocal();
+  // init timers for scan chain clock
+  timers_Init();
 
   // init INA219's (and Wire)
   monitorsInit();
 
-  // start serial over USB and wait for a connection
   // NOTE: Baud rate isn't applicable to USB...
-  // NOTE: Many libraries won't init unless Serial
-  // is running (or in this case SerialUSB). In the
-  // variants.h file Serial is supposed to be
-  // redirected to SerialUSB but that isn't working
   SerialUSB.begin(115200);
-  while ( !SerialUSB )
-  {
-      // fast blink while waiting for a connection
-      LEDstate = LEDstate ? 0 : 1;
-      digitalWrite(PIN_LED, LEDstate);
-      delay(FAST_BLINK_DELAY);
-  }
-
-  // issue #10 workaround: set LED on, close the USB connection,
-  // wait, then re-open the USB connection. This is a Windows-
-  // only issue but works on Mac as well.
-  digitalWrite(PIN_LED, LOW);
-  SerialUSB.end();
-  counter = 20;
-
-  while ( counter-- > 0 )
-  {
-        LEDstate = LEDstate ? 0 : 1;
-        digitalWrite(PIN_LED, LEDstate);
-        delay(FAST_BLINK_DELAY);
-  }
-
-  SerialUSB.begin(115200);
-  timers_Init();
-  doHello();
-  doPrompt();
 
 } // setup()
 
-//===================================================================
-//                     loop() - Main Program Loop
-//
-// FLASHING NOTE: loop() doesn't get called until USB-serial connection
-// has been established (ie, SerialUSB = 1).
-//
-// This loop does two things: blink the heartbeat LED and handle
-// incoming characters over SerialUSB connection.  Once a full CR
-// terminated input line has been received, it calls the CLI to
-// parse and execute any valid command, or sends an error message.
-//===================================================================
+
 /**
   * @name   loop
   * @brief  main program loop
   * @param  None
   * @retval None
-  * @note   see comment block for more info
+  * @note   blink heartbeat LED & handle incoming characters over SerialUSB connection
   */
 void loop() 
 {
   int             byteIn;
-  static char     inBfr[80];
+  static char     inBfr[MAX_LINE_SZ];
   static int      inCharCount = 0;
   static char     lastCmd[80] = "help";
   const char      bs[4] = {0x1b, '[', '1', 'D'};  // terminal: backspace seq
   static bool     LEDstate = false;
   static uint32_t time = millis();
+  static bool     isFirstTime = true;
 
-  // blink heartbeat LED
-  if ( millis() - time >= SLOW_BLINK_DELAY )
+  if ( isFirstTime )
   {
-      time = millis();
-      LEDstate = LEDstate ? 0 : 1;
-      digitalWrite(PIN_LED, LEDstate);
+    if ( SerialUSB )
+    {
+        doHello();
+        EEPROM_InitLocal();
+        terminalOut((char *) "Press ENTER if prompt is not shown");
+        doPrompt();
+        isFirstTime = false;
+    }
+    else
+    {
+        delay(1000);
+        return;
+    }
+  }
+  else
+  {
+        // blink heartbeat LED
+        if ( millis() - time >= SLOW_BLINK_DELAY )
+        {
+            time = millis();
+            LEDstate = LEDstate ? 0 : 1;
+            digitalWrite(PIN_LED, LEDstate);
+        }
   }
 
   // process incoming serial over USB characters
@@ -187,7 +158,16 @@ void loop()
         // all other keys get echoed & stored in buffer
         SerialUSB.write((char) byteIn);
         SerialUSB.flush();
-        inBfr[inCharCount++] = byteIn;
+        inBfr[inCharCount] = byteIn;
+        if ( inCharCount < (MAX_LINE_SZ-1) )
+        {
+            inCharCount++;
+        }
+        else
+        {
+            terminalOut((char *) "Serial input buffer overflow!");
+            inCharCount = 0;
+        }
     }
   }
 

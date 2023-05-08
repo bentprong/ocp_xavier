@@ -486,11 +486,11 @@ bool EEPROM_InitLocal(void)
       EEPROM_Save();
 
       rc = true;
-      terminalOut((char *) "EEPROM validation FAILED, EEPROM initialized OK");
+      terminalOut((char *) "FLASH storage validation FAILED, FLASH defaults loaded");
     }
     else
     {
-      terminalOut((char *) "EEPROM validated OK");
+      terminalOut((char *) "FLASH storage validated OK");
     }
 
     return(rc);

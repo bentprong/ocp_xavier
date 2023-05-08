@@ -29,6 +29,7 @@
 #include "USB/USBAPI.h"
 #include "USB/SAMD21_USBDevice.h"
 #include "USB/CDC.h"
+#warning Using expected USBCore.cpp with OCP modifications
 // end modification
 
 #include "api/PluggableUSB.h"
